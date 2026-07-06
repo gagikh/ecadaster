@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Armenia Cadastre over OpenStreetMap</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root { --bg:#0f172a; --panel:#111827; --line:#1f2937; --txt:#e5e7eb; --mut:#9ca3af; --acc:#38bdf8; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
+  #map { position:absolute; inset:0; }
+  .panel {
+    position:absolute; top:12px; left:12px; z-index:1000; width:300px; max-height:calc(100% - 24px);
+    overflow:auto; background:rgba(17,24,39,.94); color:var(--txt); border:1px solid var(--line);
+    border-radius:12px; padding:14px; backdrop-filter:blur(6px); font-size:13px;
+  }
+  .panel h1 { font-size:14px; margin:0 0 2px; }
+  .panel .sub { color:var(--mut); font-size:11px; margin:0 0 12px; }
+  .row { display:flex; gap:6px; margin-bottom:10px; }
+  textarea { width:100%; resize:vertical; padding:8px; border-radius:8px; border:1px solid var(--line);
+    background:#0b1220; color:var(--txt); font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .row button { padding:8px 10px; border:0; border-radius:8px; background:var(--acc); color:#04283a;
+    font-weight:600; cursor:pointer; }
+  fieldset { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:0 0 10px; }
+  legend { color:var(--mut); font-size:11px; padding:0 4px; text-transform:uppercase; letter-spacing:.04em; }
+  label.chk { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
+  select, input[type=range] { width:100%; }
+  .hint { color:var(--mut); font-size:11px; line-height:1.4; }
+  .status { font-size:11px; color:var(--acc); min-height:14px; margin-top:4px; }
+  #legend { margin-top:8px; }
+  .legrow { display:flex; align-items:center; gap:8px; padding:2px 0; font-size:12px; }
+  .swatch { width:12px; height:12px; border-radius:3px; flex:none; border:1px solid rgba(255,255,255,.35); cursor:pointer; }
+  .legrow .code { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .legrow .area { color:var(--mut); font-size:11px; margin-left:auto; }
+  .legrow .miss { color:#f87171; font-size:11px; }
+  .mlabel { background:rgba(15,23,42,.8); color:#fff; border:1px solid rgba(255,255,255,.3);
+    border-radius:5px; padding:1px 5px; font:600 11px system-ui; white-space:nowrap; }
+  .llabel { background:rgba(2,6,23,.72); color:#e2e8f0; border-radius:4px; padding:0 3px;
+    font:11px ui-monospace,monospace; white-space:nowrap; }
+  .leaflet-popup-content { font-size:12px; }
+  .leaflet-popup-content table { border-collapse:collapse; }
+  .leaflet-popup-content td { padding:2px 6px; border-bottom:1px solid #eee; vertical-align:top; }
+  .leaflet-popup-content td:first-child { color:#555; font-weight:600; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel">
+  <h1>Armenia Cadastre × OpenStreetMap</h1>
+  <p class="sub">Official e-cadastre GeoServer layers overlaid on OSM.</p>
+
+  <textarea id="codes" rows="4" placeholder="One code per line, e.g.
+01-001-0658-0020
+01-001-0658-0017
+01-001-0658-0021">01-001-0658-0020
+01-001-0658-0017
+01-001-0658-0021</textarea>
+  <div class="row" style="margin-top:8px">
+    <button id="find" style="flex:1">Plot all</button>
+    <button id="clear" style="background:#374151;color:#e5e7eb">Clear</button>
+  </div>
+  <div id="status" class="status"></div>
+  <div id="legend"></div>
+
+  <fieldset>
+    <legend>Basemap</legend>
+    <select id="basemap">
+      <option value="osm">OpenStreetMap</option>
+      <option value="carto">Carto Light</option>
+      <option value="esri">Esri Satellite</option>
+      <option value="ortho">e-cadastre Orthophoto 2002</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Cadastre rasters (need e-cadastre login)</legend>
+    <label class="chk"><input type="checkbox" id="ov-parcels"> Parcels</label>
+    <label class="chk"><input type="checkbox" id="ov-plabels"> Parcel labels</label>
+    <label class="chk"><input type="checkbox" id="ov-buildings"> Buildings</label>
+    <div style="margin-top:8px">
+      <span class="hint">Parcel fill / overlay opacity</span>
+      <input type="range" id="opacity" min="0" max="100" value="25">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Measurements (plotted parcels)</legend>
+    <label class="chk"><input type="checkbox" id="show-area" checked> Show area (m² / ha)</label>
+    <label class="chk"><input type="checkbox" id="show-len"> Show edge lengths (m)</label>
+  </fieldset>
+
+  <p class="hint">
+    Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with area and
+    optional edge lengths. Click a parcel for details. The e-cadastre raster layers above only
+    render inside a logged-in <code>e-cadastre.am</code> session (the GeoServer returns
+    “no such layer” to anonymous requests), so they’re off by default.
+  </p>
+</div>
+
+<script>
+// ---- Config -------------------------------------------------------------
+const WMS = "https://gp.e-cadastre.am:8443/arpis-geoportal/ows/wms";
+const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
+
+// ---- Map ----------------------------------------------------------------
+const map = L.map("map", { center:[40.2098, 44.4881], zoom:18, zoomControl:true });
+
+// Basemaps
+const bases = {
+  osm: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom:20, attribution:"© OpenStreetMap contributors" }),
+  carto: L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
+    maxZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
+  esri: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom:20, attribution:"© Esri, Maxar" }),
+  ortho: L.tileLayer.wms(WMS, {
+    layers:"ND_S1-2k_Y2002", format:"image/jpeg", transparent:false,
+    version:"1.1.1", maxZoom:22, attribution:CADASTRE_ATTR })
+};
+let currentBase = bases.osm.addTo(map);
+
+document.getElementById("basemap").onchange = (e) => {
+  map.removeLayer(currentBase);
+  currentBase = bases[e.target.value].addTo(map);
+  currentBase.bringToBack();
+};
+
+// Cadastre overlays (WMS). Leaflet requests EPSG:3857; GeoServer reprojects from EPSG:2400000.
+const startOpacity = 0.7;
+const overlays = {
+  parcels: L.tileLayer.wms(WMS, { layers:"parcels", format:"image/png", transparent:true,
+    version:"1.1.1", opacity:startOpacity, attribution:CADASTRE_ATTR }),
+  plabels: L.tileLayer.wms(WMS, { layers:"parcels_label_am", format:"image/png", transparent:true,
+    version:"1.1.1", opacity:startOpacity }),
+  buildings: L.tileLayer.wms(WMS, { layers:"buildings", format:"image/png", transparent:true,
+    version:"1.1.1", opacity:startOpacity })
+};
+// Rasters start OFF — see note below. Toggle them on only in a logged-in session.
+
+// The e-cadastre GeoServer gates GetMap behind a live login session, so from a
+// standalone file the raster overlays usually come back blank. Surface that.
+let overlayWarned = false;
+Object.values(overlays).forEach(l => l.on("tileerror", () => {
+  if (overlayWarned) return;
+  overlayWarned = true;
+  status("Cadastre raster overlays need an active e-cadastre login session — " +
+         "use the coloured parcels below (they work without login).");
+}));
+
+const bind = (id, layer) => document.getElementById(id).onchange = (e) =>
+  e.target.checked ? layer.addTo(map) : map.removeLayer(layer);
+bind("ov-parcels", overlays.parcels);
+bind("ov-plabels", overlays.plabels);
+bind("ov-buildings", overlays.buildings);
+
+const opacityVal = () => document.getElementById("opacity").value / 100;
+document.getElementById("opacity").oninput = () => {
+  const o = opacityVal();
+  Object.values(overlays).forEach(l => l.setOpacity(o));           // rasters (when logged in)
+  plotted.forEach(p => p.layer && p.layer.setStyle({ fillOpacity:o })); // colored parcels
+};
+
+const status = (m) => document.getElementById("status").textContent = m || "";
+
+// ---- Geometry helpers (geodesic, on WGS84) ------------------------------
+const R = 6378137; // metres
+const rad = d => d * Math.PI / 180;
+function haversine(a, b) {           // a,b = [lat,lng]
+  const dLat = rad(b[0]-a[0]), dLng = rad(b[1]-a[1]);
+  const s = Math.sin(dLat/2)**2 +
+            Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function perimeter(coords) {          // metres
+  let p = 0;
+  for (let i=0; i<coords.length; i++) p += haversine(coords[i], coords[(i+1)%coords.length]);
+  return p;
+}
+function areaM2(coords) {             // spherical polygon area, metres²
+  if (coords.length < 3) return 0;
+  let sum = 0;
+  for (let i=0; i<coords.length; i++) {
+    const [lat1,lng1] = coords[i], [lat2,lng2] = coords[(i+1)%coords.length];
+    sum += rad(lng2-lng1) * (2 + Math.sin(rad(lat1)) + Math.sin(rad(lat2)));
+  }
+  return Math.abs(sum * R * R / 2);
+}
+const fmtArea = a => a >= 10000 ? `${(a/10000).toFixed(2)} ha (${Math.round(a)} m²)`
+                                : `${Math.round(a)} m²`;
+const fmtLen  = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
+
+// ---- Search & plot multiple cadastral codes -----------------------------
+// NOTE: e-cadastre's own code→location endpoint isn't public yet, so this uses
+// the open map.astat.am proxy purely as a geocoder. Swap fetchPolygon() out
+// once you capture the official search endpoint.
+const PALETTE = ["#f59e0b","#38bdf8","#a78bfa","#34d399","#f472b6","#fb7185",
+                 "#facc15","#4ade80","#60a5fa","#f97316"];
+let plotted = [];                              // {code, coords, layer, ok, color, area, perim}
+const areaGroup = L.layerGroup().addTo(map);   // area labels
+const lenGroup  = L.layerGroup().addTo(map);   // edge-length labels
+
+async function fetchPolygon(code) {
+  const url = "https://map.astat.am/Map/Home/GetCadastralPolygon?cadastralCode=" + encodeURIComponent(code);
+  const r = await fetch(url);
+  const d = await r.json();
+  if (!d.success || !d.coords) return null;
+  return d.coords;                             // [[lat,lng],...]
+}
+
+function clearAll() {
+  plotted.forEach(p => p.layer && map.removeLayer(p.layer));
+  plotted = [];
+  areaGroup.clearLayers(); lenGroup.clearLayers();
+  document.getElementById("legend").innerHTML = "";
+  status("");
+}
+
+function popupHtml(p) {
+  return `<b>${p.code}</b><br>
+    Area: ${fmtArea(p.area)}<br>
+    Perimeter: ${fmtLen(p.perim)}<br>
+    Vertices: ${p.coords.length}`;
+}
+
+function renderMeasurements() {
+  areaGroup.clearLayers(); lenGroup.clearLayers();
+  const showArea = document.getElementById("show-area").checked;
+  const showLen  = document.getElementById("show-len").checked;
+  plotted.filter(p => p.ok).forEach(p => {
+    if (showArea) {
+      const c = p.layer.getBounds().getCenter();
+      L.marker(c, { interactive:false,
+        icon:L.divIcon({ className:"mlabel", html:fmtArea(p.area), iconSize:null }) }).addTo(areaGroup);
+    }
+    if (showLen) {
+      for (let i=0; i<p.coords.length; i++) {
+        const a = p.coords[i], b = p.coords[(i+1)%p.coords.length];
+        const mid = [(a[0]+b[0])/2, (a[1]+b[1])/2];
+        L.marker(mid, { interactive:false,
+          icon:L.divIcon({ className:"llabel", html:fmtLen(haversine(a,b)), iconSize:null }) }).addTo(lenGroup);
+      }
+    }
+  });
+}
+
+function renderLegend() {
+  document.getElementById("legend").innerHTML = plotted.map((p,i) => p.ok
+    ? `<div class="legrow"><span class="swatch" data-i="${i}" style="background:${p.color}"></span>
+         <span class="code">${p.code}</span><span class="area">${fmtArea(p.area)}</span></div>`
+    : `<div class="legrow"><span class="swatch" style="background:#374151"></span>
+         <span class="code">${p.code}</span> <span class="miss">not found</span></div>`
+  ).join("");
+  document.querySelectorAll("#legend .swatch[data-i]").forEach(el => el.onclick = () => {
+    const p = plotted[+el.dataset.i];
+    if (p && p.layer) { map.fitBounds(p.layer.getBounds(), { maxZoom:19 }); p.layer.openPopup(); }
+  });
+}
+
+async function plotAll() {
+  const codes = document.getElementById("codes").value
+    .split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
+  if (!codes.length) { status("Enter at least one code."); return; }
+  clearAll();
+  status("Plotting " + codes.length + " code(s)…");
+
+  const allBounds = [];
+  let colorIdx = 0, corsHit = false;
+  for (const code of codes) {
+    try {
+      const coords = await fetchPolygon(code);
+      if (!coords) { plotted.push({ code, ok:false }); continue; }
+      const color = PALETTE[colorIdx++ % PALETTE.length];
+      const layer = L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal() }).addTo(map);
+      const p = { code, coords, layer, ok:true, color, area:areaM2(coords), perim:perimeter(coords) };
+      layer.bindPopup(popupHtml(p));
+      plotted.push(p);
+      allBounds.push(layer.getBounds());
+    } catch (err) {
+      corsHit = true;
+      plotted.push({ code, ok:false });
+      console.warn("Fetch failed for", code, err);
+    }
+  }
+  renderLegend();
+  renderMeasurements();
+  if (allBounds.length) {
+    let b = allBounds[0];
+    allBounds.slice(1).forEach(x => b = b.extend(x));
+    map.fitBounds(b, { padding:[30,30], maxZoom:19 });
+  }
+  const okN = plotted.filter(p => p.ok).length;
+  status(corsHit ? "Some requests blocked by browser CORS — see console."
+                 : `Plotted ${okN} of ${codes.length}.`);
+}
+
+document.getElementById("find").onclick = plotAll;
+document.getElementById("clear").onclick = clearAll;
+document.getElementById("show-area").onchange = renderMeasurements;
+document.getElementById("show-len").onchange = renderMeasurements;
+document.getElementById("codes").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) plotAll();   // Ctrl/Cmd+Enter
+});
+</script>
+</body>
+</html>
