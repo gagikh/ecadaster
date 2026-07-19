@@ -44,7 +44,9 @@
   .leaflet-popup-content td { padding:2px 6px; border-bottom:1px solid #eee; vertical-align:top; }
   .leaflet-popup-content td:first-child { color:#555; font-weight:600; }
   a { color:var(--acc); }
-  .locate-btn { font-size:18px; text-align:center; color:#111; cursor:pointer; }
+  .locate-btn { display:block; width:26px; height:26px; line-height:26px; font-size:16px;
+    text-align:center; color:#111; background:#fff; cursor:pointer; text-decoration:none; }
+  .leaflet-touch .locate-btn { width:30px; height:30px; line-height:30px; font-size:18px; }
   .locate-btn.active { color:#2563eb; }
   .panel-toggle { position:absolute; top:8px; right:8px; z-index:2; width:32px; height:32px;
     border:1px solid var(--line); border-radius:8px; background:#1f2937; color:var(--txt);
