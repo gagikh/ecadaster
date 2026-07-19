@@ -46,12 +46,21 @@
   a { color:var(--acc); }
   .locate-btn { font-size:18px; text-align:center; color:#111; cursor:pointer; }
   .locate-btn.active { color:#2563eb; }
+  .panel-toggle { position:absolute; top:8px; right:8px; z-index:2; width:32px; height:32px;
+    border:1px solid var(--line); border-radius:8px; background:#1f2937; color:var(--txt);
+    font-size:16px; line-height:1; cursor:pointer; }
+  .panel h1 { padding-right:30px; }
+  .panel.collapsed { width:auto; max-height:none; padding:8px; overflow:visible; }
+  .panel.collapsed #panelBody { display:none; }
+  .panel.collapsed .panel-toggle { position:static; }
 </style>
 </head>
 <body>
 <div id="map"></div>
 
-<div class="panel">
+<div class="panel" id="panel">
+  <button id="panelToggle" class="panel-toggle" title="Show/hide panel">☰</button>
+  <div id="panelBody">
   <h1>Armenia Cadastre × OpenStreetMap</h1>
   <p class="sub">Official e-cadastre GeoServer layers overlaid on OSM.</p>
 
@@ -105,6 +114,7 @@
     render inside a logged-in <code>e-cadastre.am</code> session (the GeoServer returns
     “no such layer” to anonymous requests), so they’re off by default.
   </p>
+  </div>
 </div>
 
 <script>
@@ -325,6 +335,11 @@ const LocateCtl = L.Control.extend({
   }
 });
 map.addControl(new LocateCtl());
+
+// Collapsible panel (esp. for mobile)
+const panelEl = document.getElementById("panel");
+document.getElementById("panelToggle").onclick = () => panelEl.classList.toggle("collapsed");
+if (window.matchMedia("(max-width: 640px)").matches) panelEl.classList.add("collapsed");
 
 function toggleLocate(btn) {
   if (!("geolocation" in navigator)) { status("Geolocation not supported on this device."); return; }
