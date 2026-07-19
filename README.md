@@ -1,5 +1,7 @@
 # e-cadastre.am Map — Direct API Reference
 
+**Live demo:** https://gagikh.github.io/ecadaster/
+
 _Reverse-engineered from a live HAR of a logged-in `www.e-cadastre.am/map` session (2026-07-06). The official map is an **ARPIS geoportal**: a **GeoServer** (OGC WMS 1.1.1) fronted by an ExtJS 3.4 + OpenLayers app._
 
 ## The real backend

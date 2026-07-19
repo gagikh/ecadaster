@@ -44,6 +44,8 @@
   .leaflet-popup-content td { padding:2px 6px; border-bottom:1px solid #eee; vertical-align:top; }
   .leaflet-popup-content td:first-child { color:#555; font-weight:600; }
   a { color:var(--acc); }
+  .locate-btn { font:20px/28px system-ui; text-align:center; color:#111; cursor:pointer; }
+  .locate-btn.active { color:#2563eb; background:#e0ecff; }
 </style>
 </head>
 <body>
@@ -303,6 +305,54 @@ document.getElementById("show-area").onchange = renderMeasurements;
 document.getElementById("show-len").onchange = renderMeasurements;
 document.getElementById("codes").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) plotAll();   // Ctrl/Cmd+Enter
+});
+
+// ---- Show my position (mobile-friendly geolocation) ---------------------
+let meMarker = null, meCircle = null, watching = false;
+
+const LocateCtl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const b = L.DomUtil.create("a", "leaflet-bar leaflet-control locate-btn");
+    b.href = "#"; b.title = "Show my location"; b.innerHTML = "\u25ce";
+    L.DomEvent.on(b, "click", (e) => { L.DomEvent.stop(e); toggleLocate(b); });
+    return b;
+  }
+});
+map.addControl(new LocateCtl());
+
+function toggleLocate(btn) {
+  if (!("geolocation" in navigator)) { status("Geolocation not supported on this device."); return; }
+  if (!window.isSecureContext) { status("Location needs HTTPS \u2014 use the github.io URL, not a local file."); return; }
+  if (watching) {
+    map.stopLocate(); watching = false;
+    if (btn) btn.classList.remove("active");
+    status("");
+    return;
+  }
+  watching = true;
+  if (btn) btn.classList.add("active");
+  status("Locating\u2026");
+  map.locate({ setView:true, maxZoom:18, watch:true, enableHighAccuracy:true });
+}
+
+map.on("locationfound", (e) => {
+  const r = e.accuracy || 0;
+  if (!meMarker) {
+    meMarker = L.circleMarker(e.latlng, { radius:6, color:"#fff", weight:2,
+      fillColor:"#2563eb", fillOpacity:1 }).addTo(map).bindPopup("You are here");
+    meCircle = L.circle(e.latlng, { radius:r, color:"#2563eb", weight:1, fillOpacity:0.08 }).addTo(map);
+  } else {
+    meMarker.setLatLng(e.latlng);
+    meCircle.setLatLng(e.latlng).setRadius(r);
+  }
+  status(`Location \u00b1${Math.round(r)} m`);
+});
+
+map.on("locationerror", (e) => {
+  watching = false;
+  const lb = document.querySelector(".locate-btn"); if (lb) lb.classList.remove("active");
+  status(e.code === 1 ? "Location permission denied." : "Couldn't get your location.");
 });
 </script>
 </body>
