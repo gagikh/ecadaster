@@ -44,9 +44,7 @@
   .leaflet-popup-content td { padding:2px 6px; border-bottom:1px solid #eee; vertical-align:top; }
   .leaflet-popup-content td:first-child { color:#555; font-weight:600; }
   a { color:var(--acc); }
-  .locate-btn { display:block; width:26px; height:26px; line-height:26px; font-size:16px;
-    text-align:center; color:#111; background:#fff; cursor:pointer; text-decoration:none; }
-  .leaflet-touch .locate-btn { width:30px; height:30px; line-height:30px; font-size:18px; }
+  .locate-btn { color:#111; font-size:18px; text-align:center; }
   .locate-btn.active { color:#2563eb; }
   .panel-toggle { position:absolute; top:8px; right:8px; z-index:2; width:32px; height:32px;
     border:1px solid var(--line); border-radius:8px; background:#1f2937; color:var(--txt);
@@ -327,16 +325,11 @@ document.getElementById("codes").addEventListener("keydown", e => {
 // ---- Show my position (mobile-friendly geolocation) ---------------------
 let meMarker = null, meCircle = null, watching = false;
 
-const LocateCtl = L.Control.extend({
-  options: { position: "topright" },
-  onAdd() {
-    const b = L.DomUtil.create("a", "leaflet-bar leaflet-control locate-btn");
-    b.href = "#"; b.title = "Show my location"; b.innerHTML = "\u25ce";
-    L.DomEvent.on(b, "click", (e) => { L.DomEvent.stop(e); toggleLocate(b); });
-    return b;
-  }
-});
-map.addControl(new LocateCtl());
+// Locate button = a third button joined under the zoom +/- bar (native look)
+const locBtn = L.DomUtil.create("a", "locate-btn", map.zoomControl.getContainer());
+locBtn.href = "#"; locBtn.title = "Show my location"; locBtn.innerHTML = "◎";
+locBtn.setAttribute("role", "button");
+L.DomEvent.on(locBtn, "click", (e) => { L.DomEvent.stop(e); toggleLocate(locBtn); });
 
 // Collapsible panel (esp. for mobile)
 const panelEl = document.getElementById("panel");
