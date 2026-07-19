@@ -114,6 +114,7 @@ const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
 
 // ---- Map ----------------------------------------------------------------
 const map = L.map("map", { center:[40.2098, 44.4881], zoom:18, zoomControl:true });
+map.zoomControl.setPosition("topright");
 
 // Basemaps
 const bases = {
@@ -315,7 +316,7 @@ document.getElementById("codes").addEventListener("keydown", e => {
 let meMarker = null, meCircle = null, watching = false;
 
 const LocateCtl = L.Control.extend({
-  options: { position: "topleft" },
+  options: { position: "topright" },
   onAdd() {
     const b = L.DomUtil.create("a", "leaflet-bar leaflet-control locate-btn");
     b.href = "#"; b.title = "Show my location"; b.innerHTML = "\u25ce";
