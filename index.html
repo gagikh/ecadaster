@@ -165,7 +165,7 @@ function switchBase(key) {
   currentBase = bases[key].addTo(map);
   currentBase.bringToBack();
 }
-document.getElementById("basemap").onchange = (e) => switchBase(e.target.value);
+document.getElementById("basemap").onchange = (e) => { switchBase(e.target.value); commit(); };
 
 // Cadastre overlays (WMS). Leaflet requests EPSG:3857; GeoServer reprojects from EPSG:2400000.
 const startOpacity = 0.7;
@@ -189,8 +189,9 @@ Object.values(overlays).forEach(l => l.on("tileerror", () => {
          "use the coloured parcels below (they work without login).");
 }));
 
-const bind = (id, layer) => document.getElementById(id).onchange = (e) =>
-  e.target.checked ? layer.addTo(map) : map.removeLayer(layer);
+const bind = (id, layer) => document.getElementById(id).onchange = (e) => {
+  e.target.checked ? layer.addTo(map) : map.removeLayer(layer); commit();
+};
 bind("ov-parcels", overlays.parcels);
 bind("ov-plabels", overlays.plabels);
 bind("ov-buildings", overlays.buildings);
@@ -200,6 +201,7 @@ function applyOpacity() {
   const o = opacityVal();
   Object.values(overlays).forEach(l => l.setOpacity(o));           // rasters (when logged in)
   plotted.forEach(p => p.layer && p.layer.setStyle({ fillOpacity:o })); // colored parcels
+  syncURL();
 }
 document.getElementById("opacity").oninput = applyOpacity;
 
@@ -334,12 +336,13 @@ async function plotAll(skipFit = false) {
   const okN = plotted.filter(p => p.ok).length;
   status(corsHit ? "Some requests blocked by browser CORS — see console."
                  : `Plotted ${okN} of ${codes.length}.`);
+  commit();
 }
 
 document.getElementById("find").onclick = () => plotAll();
 document.getElementById("clear").onclick = clearAll;
-document.getElementById("show-area").onchange = renderMeasurements;
-document.getElementById("show-len").onchange = renderMeasurements;
+document.getElementById("show-area").onchange = () => { renderMeasurements(); commit(); };
+document.getElementById("show-len").onchange = () => { renderMeasurements(); commit(); };
 document.getElementById("codes").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) plotAll();   // Ctrl/Cmd+Enter
 });
@@ -364,6 +367,11 @@ function buildShareURL() {
   p.set("lng", c.lng.toFixed(6));
   return location.origin + location.pathname + "?" + p.toString();
 }
+
+function syncURL() { history.replaceState(null, "", buildShareURL()); }
+let isRestoring = false;
+function pushURL() { history.pushState(null, "", buildShareURL()); }
+function commit() { isRestoring ? syncURL() : pushURL(); }   // history entry unless restoring
 
 document.getElementById("share").onclick = async () => {
   const url = buildShareURL();
@@ -397,7 +405,10 @@ async function applyStateFromURL() {
   }
   if (hasView) map.setView([+q.get("lat"), +q.get("lng")], +q.get("z"));
 }
-applyStateFromURL();
+async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
+restore();
+map.on("moveend", syncURL);
+window.addEventListener("popstate", restore);
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
 let meMarker = null, meCircle = null, watching = false;
