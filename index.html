@@ -76,6 +76,7 @@
 02-082-0204-0080</textarea>
   <div class="row" style="margin-top:8px">
     <button id="find" style="flex:1">Plot all</button>
+    <button id="share" style="background:#10b981;color:#04283a">Share</button>
     <button id="clear" style="background:#374151;color:#e5e7eb">Clear</button>
   </div>
   <div id="status" class="status"></div>
@@ -158,11 +159,13 @@ const bases = {
 };
 let currentBase = bases.osm.addTo(map);
 
-document.getElementById("basemap").onchange = (e) => {
+function switchBase(key) {
+  if (!bases[key]) return;
   map.removeLayer(currentBase);
-  currentBase = bases[e.target.value].addTo(map);
+  currentBase = bases[key].addTo(map);
   currentBase.bringToBack();
-};
+}
+document.getElementById("basemap").onchange = (e) => switchBase(e.target.value);
 
 // Cadastre overlays (WMS). Leaflet requests EPSG:3857; GeoServer reprojects from EPSG:2400000.
 const startOpacity = 0.7;
@@ -193,11 +196,12 @@ bind("ov-plabels", overlays.plabels);
 bind("ov-buildings", overlays.buildings);
 
 const opacityVal = () => document.getElementById("opacity").value / 100;
-document.getElementById("opacity").oninput = () => {
+function applyOpacity() {
   const o = opacityVal();
   Object.values(overlays).forEach(l => l.setOpacity(o));           // rasters (when logged in)
   plotted.forEach(p => p.layer && p.layer.setStyle({ fillOpacity:o })); // colored parcels
-};
+}
+document.getElementById("opacity").oninput = applyOpacity;
 
 const status = (m) => document.getElementById("status").textContent = m || "";
 
@@ -295,7 +299,7 @@ function renderLegend() {
   });
 }
 
-async function plotAll() {
+async function plotAll(skipFit = false) {
   const codes = document.getElementById("codes").value
     .split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
   if (!codes.length) { status("Enter at least one code."); return; }
@@ -322,7 +326,7 @@ async function plotAll() {
   }
   renderLegend();
   renderMeasurements();
-  if (allBounds.length) {
+  if (allBounds.length && !skipFit) {
     let b = allBounds[0];
     allBounds.slice(1).forEach(x => b = b.extend(x));
     map.fitBounds(b, { padding:[30,30], maxZoom:19 });
@@ -332,13 +336,68 @@ async function plotAll() {
                  : `Plotted ${okN} of ${codes.length}.`);
 }
 
-document.getElementById("find").onclick = plotAll;
+document.getElementById("find").onclick = () => plotAll();
 document.getElementById("clear").onclick = clearAll;
 document.getElementById("show-area").onchange = renderMeasurements;
 document.getElementById("show-len").onchange = renderMeasurements;
 document.getElementById("codes").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) plotAll();   // Ctrl/Cmd+Enter
 });
+
+// ---- Shareable link (full state encoded in the URL) ---------------------
+const OV_MAP = [["ov-parcels","parcels"],["ov-plabels","plabels"],["ov-buildings","buildings"]];
+
+function buildShareURL() {
+  const typed = document.getElementById("codes").value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  const codes = plotted.length ? plotted.map(p=>p.code) : typed;
+  const ov = OV_MAP.filter(([id]) => document.getElementById(id).checked).map(([,k]) => k);
+  const c = map.getCenter();
+  const p = new URLSearchParams();
+  if (codes.length) p.set("codes", codes.join(","));
+  p.set("base", document.getElementById("basemap").value);
+  if (ov.length) p.set("ov", ov.join(","));
+  p.set("op", document.getElementById("opacity").value);
+  p.set("area", document.getElementById("show-area").checked ? 1 : 0);
+  p.set("len",  document.getElementById("show-len").checked ? 1 : 0);
+  p.set("z", map.getZoom());
+  p.set("lat", c.lat.toFixed(6));
+  p.set("lng", c.lng.toFixed(6));
+  return location.origin + location.pathname + "?" + p.toString();
+}
+
+document.getElementById("share").onclick = async () => {
+  const url = buildShareURL();
+  history.replaceState(null, "", url);          // reflect in address bar
+  try { await navigator.clipboard.writeText(url); status("Share link copied ✓"); }
+  catch { window.prompt("Copy this share link:", url); }
+};
+
+async function applyStateFromURL() {
+  const q = new URLSearchParams(location.search);
+  if (![...q.keys()].length) return;
+
+  const base = q.get("base");
+  if (base) { document.getElementById("basemap").value = base; switchBase(base); }
+
+  const ov = (q.get("ov") || "").split(",").filter(Boolean);
+  OV_MAP.forEach(([id,k]) => {
+    const on = ov.includes(k);
+    document.getElementById(id).checked = on;
+    on ? overlays[k].addTo(map) : map.removeLayer(overlays[k]);
+  });
+
+  if (q.get("op")  !== null) { document.getElementById("opacity").value = q.get("op"); applyOpacity(); }
+  if (q.get("area") !== null) document.getElementById("show-area").checked = q.get("area") === "1";
+  if (q.get("len")  !== null) document.getElementById("show-len").checked  = q.get("len")  === "1";
+
+  const hasView = q.get("lat") && q.get("lng") && q.get("z");
+  if (q.get("codes")) {
+    document.getElementById("codes").value = q.get("codes").split(",").join("\n");
+    await plotAll(!!hasView);                    // don't auto-fit if a view is shared
+  }
+  if (hasView) map.setView([+q.get("lat"), +q.get("lng")], +q.get("z"));
+}
+applyStateFromURL();
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
 let meMarker = null, meCircle = null, watching = false;
