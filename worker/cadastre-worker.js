@@ -155,11 +155,28 @@ export default {
           // Browsers can't send that Referer themselves, hence this passthrough.
           const qs = new URLSearchParams(url.search);
           qs.delete("_");
+          const dbg = qs.get("debug"); qs.delete("debug");
           const r = await fetch(BASE + "/ows/wms?" + qs.toString(), { headers: headers(env) });
+          if (dbg) {   // report metadata instead of the image, for diagnosis
+            const ct0 = r.headers.get("content-type") || "";
+            const buf = await r.arrayBuffer();
+            const h = new Uint8Array(buf.slice(0, 4));
+            const png = h[0] === 0x89 && h[1] === 0x50;
+            return json({ upstream: BASE + "/ows/wms?" + qs.toString(),
+                          status: r.status, ct: ct0, bytes: buf.byteLength, isPng: png,
+                          verdict: !png ? "ERROR" : buf.byteLength < 500 ? "blank" : "has content",
+                          peek: png ? null : new TextDecoder().decode(buf.slice(0, 300)) }, o);
+          }
           const ct = r.headers.get("content-type") || "";
           if (!r.ok || !ct.startsWith("image")) {
-            const t = await r.text();
-            return json({ error: "wms failed", status: r.status, ct, body: t.slice(0, 400) }, o, 502);
+            // Upstream refuses some requests (e.g. country-wide zooms). Return a
+            // transparent 1x1 PNG so the map degrades quietly instead of erroring.
+            const blank = Uint8Array.from(atob(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            ), c => c.charCodeAt(0));
+            return new Response(blank, { status: 200, headers: {
+              "Content-Type": "image/png", "Cache-Control": "public, max-age=300",
+              "Access-Control-Allow-Origin": "*", "X-Upstream-Status": String(r.status) } });
           }
           return new Response(r.body, {
             status: 200,

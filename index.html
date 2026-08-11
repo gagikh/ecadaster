@@ -151,7 +151,7 @@ const I18N = {
     plotting:n=>`Գծվում է ${n} ծածկագիր…`, plotted:(a,b)=>`Գծվեց ${a} / ${b}։`,
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
-    rasterWarn:"Կադաստրի շերտերը ժամանակավորապես անհասանելի են։",
+    rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։",
     notFound:"չի գտնվել", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
   },
   en: {
@@ -176,7 +176,7 @@ const I18N = {
     plotting:n=>`Plotting ${n} code(s)…`, plotted:(a,b)=>`Plotted ${a} of ${b}.`,
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
-    rasterWarn:"Cadastre layers are temporarily unavailable.",
+    rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).",
     notFound:"not found", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
   },
   ru: {
@@ -201,7 +201,7 @@ const I18N = {
     plotting:n=>`Показываю ${n} код(ов)…`, plotted:(a,b)=>`Показано ${a} из ${b}.`,
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
-    rasterWarn:"Слои кадастра временно недоступны.",
+    rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).",
     notFound:"не найдено", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
   },
 };
@@ -265,11 +265,11 @@ document.getElementById("basemap").onchange = (e) => { switchBase(e.target.value
 const startOpacity = 0.7;
 const overlays = {
   parcels: L.tileLayer.wms(WMS, { layers:"parcels", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity, attribution:CADASTRE_ATTR }),
+    version:"1.1.1", opacity:startOpacity, minZoom:14, maxZoom:22, attribution:CADASTRE_ATTR }),
   plabels: L.tileLayer.wms(WMS, { layers:"parcels_label_am", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity }),
+    version:"1.1.1", opacity:startOpacity, minZoom:16, maxZoom:22 }),
   buildings: L.tileLayer.wms(WMS, { layers:"buildings", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity })
+    version:"1.1.1", opacity:startOpacity, minZoom:15, maxZoom:22 })
 };
 overlays.parcels.addTo(map);
 overlays.plabels.addTo(map);
