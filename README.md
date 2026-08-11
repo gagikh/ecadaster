@@ -1,82 +1,106 @@
 # e-cadaster
 
-Interactive map of Armenian cadastral parcels.
+Interactive map of Armenian cadastral parcels — plot parcels by cadastral code over
+OpenStreetMap, with official boundaries, areas and measurements.
 
-**Live demo:** https://gagikh.github.io/ecadaster/
+**Live:** https://gagikh.github.io/ecadaster/
 
 | File | Purpose |
 |------|---------|
-| `index.html` | The map app (pure HTML/JS — open in a browser, no build step). |
-| `worker/cadastre-worker.js` | Cloudflare Worker: your own proxy to the official cadastre. |
-| `cadastre_client.py` | CLI helper (Python 3, stdlib only). |
+| `index.html` | The whole app (HTML + JS, no build step). |
+| `worker/cadastre-worker.js` | Cloudflare Worker — proxy to the official cadastre. |
+
+## Features
+
+- Plot many cadastral codes at once, each in its own colour
+- Official parcel **boundaries** and **area** straight from the cadastre
+- Optional area / edge-length labels; adjustable fill opacity
+- Official cadastre layers (parcels, labels, buildings) + 10 basemaps
+- Shareable links (full state in the URL) with Back/Forward history
+- Geolocation, Armenian / English / Russian UI
 
 ---
 
-# Official e-cadastre API — reverse-engineered
+# The official API, reverse-engineered
 
-The government map is an **ARPIS / Geofoto geoportal** (ExtJS 3.4 + OpenLayers)
-at `gp.e-cadastre.am:8443/arpis-geoportal`, backed by GeoServer + an Oracle DB.
+The government map is an **ARPIS / Geofoto geoportal** (ExtJS 3.4 + OpenLayers) at
+`gp.e-cadastre.am:8443/arpis-geoportal`, backed by GeoServer and an Oracle database.
 
-## Auth: UID mode (no captcha automation)
+## Access: anonymous
 
-The e-cadastre login is **Google reCAPTCHA v3 gated**, so automated login is not
-possible (and not attempted). Instead:
+**No login, no credentials, no session.** The servlets serve anyone whose `Referer`
+looks like the geoportal with a numeric uid — and **`uid=0` (anonymous) is accepted**:
 
-1. Log into `www.e-cadastre.am` in a browser (human solves the captcha).
-2. Open **Քարտեզ / map**; the geoportal opens as `…/arpis-geoportal/?uid=NNNNN&lang=am`.
-3. Copy that `uid` → `wrangler secret put UID`.
+```
+Referer: https://gp.e-cadastre.am:8443/arpis-geoportal/?uid=0&lang=am
+```
 
-The `uid` alone authorizes the data servlets — confirmed working from Cloudflare
-(no IP block). It **expires**, so refresh it periodically.
+Browsers can't set that header cross-origin, which is the only reason a proxy is needed.
+(The site's own login is Google reCAPTCHA-gated and is neither needed nor used here.)
 
-## The data servlet
+## Servlet
 
-Base: `Ext.SERVLET_URL` = **`/arpis-geoportal/data/`** → servlet **`info`**
-(POST, `application/x-www-form-urlencoded`, `Referer: …/?uid=NNNNN&lang=am`).
+Base `Ext.SERVLET_URL` = `/arpis-geoportal/data/`, servlet `info`
+(POST, form-urlencoded).
 
-### 1. List searchable attributes
+**1. Attributes of a layer**
 ```
 action=infoClassAttruibutes_SRCH
 data={"p_className":"parcels"}
 ```
-Key result for parcels: **`cadastre_code`** ("Կադաստրային կոդ") = **attribute id 2260**,
-plus `area`, `ins_time_of_execution`.
+→ `cadastre_code` ("Կադաստրային կոդ") is **attribute id 2260**; also `area`, `ins_time_of_execution`.
 
-### 2. Find rows by cadastral code
+**2. Find by cadastral code**
 ```
 action=infoShowData
 data={"p_className":"parcels","p_prm_id":"2260","p_prm_val":"01-004-0117-0003"}
 start=0&limit=10
 ```
-- Rows come back under **`results`** (not `data`); count in `totalRecords`.
-- Codes are stored **hyphenated**, exactly `RR-BBB-SSSS-UUUU`.
-- Row id is `{rowid}` with value like `{ID}'7241478'`.
-- A trailing `*` acts as a wildcard (`01*`).
-- Values are interpolated into SQL — **validate input** (digits/hyphens only).
+- rows arrive under **`results`** (not `data`), total in `totalRecords`
+- codes are stored **hyphenated**: `RR-BBB-SSSS-UUUU`
+- row id is `{rowid}` = `{ID}'7241478'`; trailing `*` works as a wildcard
+- values are interpolated into SQL → **validate input** (digits and hyphens only)
 
-### 3. Get geometry
+**3. Centroid**
 ```
 action=infoGetGeom
 data={"p_className":"parcels","p_id":"{ID}'7241478'"}
 ```
-→ `{ success:true, wkt:"POINT (8456694.69 4453801.24)" }`
+→ `{ success:true, wkt:"POINT (...)" }` — only the centre point.
 
-**Important:** the cadastre now returns the parcel's **centroid POINT**, not a
-boundary polygon. (This is why third-party viewers show an *approximate* outline.)
-You still get the authoritative **area** from step 2.
+**4. Full polygon** (the useful one)
+```
+action=infoGetDataAndGeom
+p_layer_i=parcels & p_x_i=<northing> & p_y_i=<easting> & p_buff_i=1 & p_loc_i=am
+```
+Feed it the centroid from step 3 and it returns the parcel's **full boundary** as WKT.
+Note the axis naming: `p_x_i` is the *northing*, `p_y_i` the *easting*.
 
-### Coordinates
-Native CRS is **`EPSG:2400000`** (Armenian GK zone 8: TM, central meridian 45°E,
-false easting 8,500,000, Krassovsky 1940). The Worker converts to WGS84 lat/lng.
+## Coordinates
 
-### Other layers
+Native CRS is **`EPSG:2400000`** — Armenian GK zone 8 (Transverse Mercator, central
+meridian 45°E, false easting 8,500,000, k₀=1, Krassovsky 1940). The Worker converts to
+WGS84; output matches the reference implementation to 8 decimal places.
+
+## Map tiles (WMS)
+
+`/arpis-geoportal/ows/wms` — layers `parcels`, `parcels_label_am`, `buildings`,
+`marz_centers`, `ND_S1-2k_Y2002` (orthophoto).
+
+- **`EPSG:3857` is silently ignored** (always the same empty tile) — request `EPSG:4326`
+  or the native grid. The Worker reprojects Leaflet's mercator bboxes automatically.
+- The service is slow (~0.4–1.7 s/tile), so the Worker caches tiles at the edge and the
+  map uses 512 px tiles that load when panning stops.
+
+## Not available
+
+- **WFS** — every `/ows/wfs` path 404s.
+- **`doExport`** — a *paid* draw-an-area shapefile export (`calculate` returns a price),
+  not a lookup.
+
+## Other layers
+
 `blocks`, `buildings`, `constructions`, `geodetic_points`, `parcels`, `property_rights`.
-
-### Map tiles (WMS)
-`/arpis-geoportal/ows/wms` — `GetMap` works with the `uid` session.
-Layers: `parcels`, `parcels_label_am`, `buildings`, `marz_centers`, `ND_S1-2k_Y2002` (ortho).
-**WFS is not exposed** (all `/ows/wfs` paths 404). `doExport` is a *paid*
-draw-an-area shapefile export (`calculate` returns a price), not a lookup.
 
 ---
 
@@ -84,21 +108,14 @@ draw-an-area shapefile export (`calculate` returns a price), not a lookup.
 
 ```bash
 cd worker
-wrangler secret put UID      # fresh uid from a browser session
-wrangler deploy
+wrangler deploy          # no secrets required
 ```
-
-Endpoints:
 
 | Endpoint | Purpose |
 |---|---|
-| `/parcel?code=RR-BBB-SSSS-UUUU` | **Main API** → `{success, area, coords:[[lat,lng]], wkt}` |
-| `/debug` | Is the `uid` session still alive? |
-| `/attrs` | Searchable attributes for a layer |
-| `/sample?q=01*` | Raw sample rows (explore real data) |
-| `/find?code=` | Step-by-step lookup (debugging) |
-| `/raw?p=/path&off=0` | Read a geoportal file (debugging) |
+| `/parcel?code=RR-BBB-SSSS-UUUU` | `{success, area, coords:[[lat,lng]], geometryType, updated}` |
+| `/wms?<WMS params>` | tile passthrough (adds Referer, reprojects, caches) |
+| `/health` | upstream liveness |
 
-CORS is restricted to `https://gagikh.github.io`.
-
-**Note:** this is an undocumented internal API; it can change without notice.
+CORS is limited to the site origin. This is an undocumented internal API and may change
+without notice.

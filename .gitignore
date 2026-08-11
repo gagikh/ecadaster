@@ -1,4 +1,5 @@
-*.pyc
-__pycache__/
 _check.js
+__pycache__/
+*.pyc
 worker/.wrangler/
+node_modules/
