@@ -102,8 +102,8 @@
 
   <fieldset>
     <legend data-i18n="legRasters">Cadastre rasters (need e-cadastre login)</legend>
-    <label class="chk"><input type="checkbox" id="ov-parcels"> <span data-i18n="ovParcels">Parcels</span></label>
-    <label class="chk"><input type="checkbox" id="ov-plabels"> <span data-i18n="ovLabels">Parcel labels</span></label>
+    <label class="chk"><input type="checkbox" id="ov-parcels" checked> <span data-i18n="ovParcels">Parcels</span></label>
+    <label class="chk"><input type="checkbox" id="ov-plabels" checked> <span data-i18n="ovLabels">Parcel labels</span></label>
     <label class="chk"><input type="checkbox" id="ov-buildings"> <span data-i18n="ovBuildings">Buildings</span></label>
     <div style="margin-top:8px">
       <span class="hint" data-i18n="opacity">Parcel fill / overlay opacity</span>
@@ -123,7 +123,8 @@
 
 <script>
 // ---- Config -------------------------------------------------------------
-const WMS = "https://gp.e-cadastre.am:8443/arpis-geoportal/ows/wms";
+const API = "https://cadastre-worker.ecadaster.workers.dev";   // own proxy to the official cadastre
+const WMS = API + "/wms";                                      // WMS tiles via the proxy (adds required Referer)
 const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
 
 // ---- i18n ---------------------------------------------------------------
@@ -136,11 +137,11 @@ const I18N = {
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
-    legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի ռաստերներ (պահանջվում է մուտք)", legMeas:"Չափումներ (գծված հողամասեր)",
+    legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ (գծված հողամասեր)",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր",
     opacity:"Լցման/շերտի թափանցիկություն",
     showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)",
-    hint:`Մուտքագրեք կադաստրային ծածկագրերը և սեղմեք <b>Գծել բոլորը</b> — յուրաքանչյուր հողամաս ստանում է իր գույնը՝ մակերեսով և ընտրովի եզրերի երկարություններով։ Սեղմեք հողամասին՝ մանրամասների համար։ Վերևի կադաստրի ռաստերները երևում են միայն <code>e-cadastre.am</code>-ում մուտք գործած վիճակում, ուստի լռելյայն անջատված են։`,
+    hint:`Մուտքագրեք կադաստրային ծածկագրերը և սեղմեք <b>Գծել բոլորը</b> — յուրաքանչյուր հողամաս ստանում է իր գույնը՝ պաշտոնական մակերեսով և ընտրովի եզրերի երկարություններով։ Սեղմեք հողամասին՝ մանրամասների համար։ Տվյալները՝ ՀՀ կադաստրի կոմիտեից։`,
     panelToggle:"Ցույց տալ/թաքցնել վահանակը", locateTitle:"Ցույց տալ իմ տեղը",
     locating:"Որոնում…", locAcc:r=>`Տեղորոշում ±${r} մ`,
     locDenied:"Տեղորոշման թույլտվությունը մերժված է։", locFail:"Չհաջողվեց ստանալ տեղը։",
@@ -150,7 +151,7 @@ const I18N = {
     plotting:n=>`Գծվում է ${n} ծածկագիր…`, plotted:(a,b)=>`Գծվեց ${a} / ${b}։`,
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
-    rasterWarn:"Կադաստրի ռաստերները պահանջում են ակտիվ մուտք — օգտագործեք ներքևի գունավոր հողամասերը (առանց մուտքի)։",
+    rasterWarn:"Կադաստրի շերտերը ժամանակավորապես անհասանելի են։",
     notFound:"չի գտնվել", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
   },
   en: {
@@ -161,11 +162,11 @@ const I18N = {
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Plot all", share:"Share", clear:"Clear",
-    legBasemap:"Basemap", legRasters:"Cadastre rasters (need e-cadastre login)", legMeas:"Measurements (plotted parcels)",
+    legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements (plotted parcels)",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings",
     opacity:"Parcel fill / overlay opacity",
     showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)",
-    hint:`Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with area and optional edge lengths. Click a parcel for details. The e-cadastre raster layers above only render inside a logged-in <code>e-cadastre.am</code> session (the GeoServer returns “no such layer” to anonymous requests), so they’re off by default.`,
+    hint:`Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with its official area and optional edge lengths. Click a parcel for details. Boundaries and layers come live from the State Cadastre Committee of Armenia.`,
     panelToggle:"Show/hide panel", locateTitle:"Show my location",
     locating:"Locating…", locAcc:r=>`Location ±${r} m`,
     locDenied:"Location permission denied.", locFail:"Couldn't get your location.",
@@ -175,7 +176,7 @@ const I18N = {
     plotting:n=>`Plotting ${n} code(s)…`, plotted:(a,b)=>`Plotted ${a} of ${b}.`,
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
-    rasterWarn:"Cadastre raster overlays need an active e-cadastre login session — use the coloured parcels below (they work without login).",
+    rasterWarn:"Cadastre layers are temporarily unavailable.",
     notFound:"not found", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
   },
   ru: {
@@ -186,11 +187,11 @@ const I18N = {
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
-    legBasemap:"Подложка", legRasters:"Растры кадастра (нужен вход)", legMeas:"Измерения (показанные участки)",
+    legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения (показанные участки)",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания",
     opacity:"Прозрачность заливки/слоя",
     showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)",
-    hint:`Введите кадастровые коды и нажмите <b>Показать все</b> — каждый участок получает свой цвет, с площадью и опциональными длинами сторон. Нажмите на участок для деталей. Растровые слои кадастра выше отображаются только при входе в <code>e-cadastre.am</code>, поэтому по умолчанию отключены.`,
+    hint:`Введите кадастровые коды и нажмите <b>Показать все</b> — каждый участок получает свой цвет, с официальной площадью и опциональными длинами сторон. Нажмите на участок для деталей. Данные — Комитет кадастра Армении.`,
     panelToggle:"Показать/скрыть панель", locateTitle:"Показать моё местоположение",
     locating:"Определение…", locAcc:r=>`Местоположение ±${r} м`,
     locDenied:"Доступ к местоположению запрещён.", locFail:"Не удалось определить местоположение.",
@@ -200,7 +201,7 @@ const I18N = {
     plotting:n=>`Показываю ${n} код(ов)…`, plotted:(a,b)=>`Показано ${a} из ${b}.`,
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
-    rasterWarn:"Растры кадастра требуют активного входа — используйте цветные участки ниже (работают без входа).",
+    rasterWarn:"Слои кадастра временно недоступны.",
     notFound:"не найдено", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
   },
 };
@@ -270,10 +271,11 @@ const overlays = {
   buildings: L.tileLayer.wms(WMS, { layers:"buildings", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity })
 };
-// Rasters start OFF — see note below. Toggle them on only in a logged-in session.
+overlays.parcels.addTo(map);
+overlays.plabels.addTo(map);
 
-// The e-cadastre GeoServer gates GetMap behind a live login session, so from a
-// standalone file the raster overlays usually come back blank. Surface that.
+// Tiles are proxied by our Worker (which adds the Referer the cadastre requires),
+// so they render for everyone — no login. Surface genuine outages only.
 let overlayWarned = false;
 Object.values(overlays).forEach(l => l.on("tileerror", () => {
   if (overlayWarned) return;
@@ -327,9 +329,8 @@ const fmtArea = a => a >= 10000 ? `${(a/10000).toFixed(2)} ha (${Math.round(a)} 
 const fmtLen  = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
 
 // ---- Search & plot multiple cadastral codes -----------------------------
-// NOTE: e-cadastre's own code→location endpoint isn't public yet, so this uses
-// the open map.astat.am proxy purely as a geocoder. Swap fetchPolygon() out
-// once you capture the official search endpoint.
+// Geometry comes from our own Cloudflare Worker, which proxies the official
+// e-cadastre geoportal (infoShowData -> infoGetGeom -> infoGetDataAndGeom).
 const PALETTE = ["#f59e0b","#38bdf8","#a78bfa","#34d399","#f472b6","#fb7185",
                  "#facc15","#4ade80","#60a5fa","#f97316"];
 let plotted = [];                              // {code, coords, layer, ok, color, area, perim}
@@ -337,11 +338,10 @@ const areaGroup = L.layerGroup().addTo(map);   // area labels
 const lenGroup  = L.layerGroup().addTo(map);   // edge-length labels
 
 async function fetchPolygon(code) {
-  const url = "https://map.astat.am/Map/Home/GetCadastralPolygon?cadastralCode=" + encodeURIComponent(code);
-  const r = await fetch(url);
+  const r = await fetch(API + "/parcel?code=" + encodeURIComponent(code));
   const d = await r.json();
-  if (!d.success || !d.coords) return null;
-  return d.coords;                             // [[lat,lng],...]
+  if (!d.success || !d.coords || !d.coords.length) return null;
+  return d;                                    // { coords:[[lat,lng],...], area, updated, source }
 }
 
 function clearAll() {
@@ -356,7 +356,8 @@ function popupHtml(p) {
   return `<b>${p.code}</b><br>
     ${t("popupArea")}: ${fmtArea(p.area)}<br>
     ${t("popupPerim")}: ${fmtLen(p.perim)}<br>
-    ${t("popupVerts")}: ${p.coords.length}`;
+    ${t("popupVerts")}: ${p.coords.length}` +
+    (p.updated ? `<br><span style="color:#666">${p.updated}</span>` : "");
 }
 
 function renderMeasurements() {
@@ -404,11 +405,14 @@ async function plotAll(skipFit = false) {
   let colorIdx = 0, corsHit = false;
   for (const code of codes) {
     try {
-      const coords = await fetchPolygon(code);
-      if (!coords) { plotted.push({ code, ok:false }); continue; }
+      const res = await fetchPolygon(code);
+      if (!res) { plotted.push({ code, ok:false }); continue; }
+      const coords = res.coords;
       const color = PALETTE[colorIdx++ % PALETTE.length];
       const layer = L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal() }).addTo(map);
-      const p = { code, coords, layer, ok:true, color, area:areaM2(coords), perim:perimeter(coords) };
+      const p = { code, coords, layer, ok:true, color,
+                  area: (typeof res.area === "number" && res.area > 0) ? res.area : areaM2(coords),
+                  perim: perimeter(coords), official: typeof res.area === "number", updated: res.updated };
       layer.bindPopup(popupHtml(p));
       plotted.push(p);
       allBounds.push(layer.getBounds());
@@ -460,9 +464,20 @@ function buildShareURL() {
   return location.origin + location.pathname + "?" + p.toString();
 }
 
-function syncURL() { history.replaceState(null, "", buildShareURL()); }
+// History updates are blocked in sandboxed/srcdoc/file contexts — degrade gracefully.
+const canHistory = (() => {
+  try { return /^https?:$/.test(location.protocol) && location.origin && location.origin !== "null"; }
+  catch { return false; }
+})();
+function syncURL() {
+  if (!canHistory) return;
+  try { history.replaceState(null, "", buildShareURL()); } catch (e) { /* ignore */ }
+}
 let isRestoring = false;
-function pushURL() { history.pushState(null, "", buildShareURL()); }
+function pushURL() {
+  if (!canHistory) return syncURL();
+  try { history.pushState(null, "", buildShareURL()); } catch (e) { /* ignore */ }
+}
 function commit() { isRestoring ? syncURL() : pushURL(); }   // history entry unless restoring
 
 document.getElementById("share").onclick = async () => {
