@@ -168,20 +168,29 @@ export default {
           });
         }
         case "/wmstest": {
-          // diagnostic: does WMS answer with the uid=0 referer?
-          const q = new URLSearchParams({
+          // compare SRS support: native 2400000 vs web-mercator 3857 (what Leaflet sends)
+          const mk = (srs, bbox) => new URLSearchParams({
             SERVICE: "WMS", VERSION: "1.1.1", REQUEST: "GetMap", LAYERS: "parcels",
-            FORMAT: "image/png", TRANSPARENT: "true", STYLES: "", SRS: "EPSG:2400000",
-            BBOX: "8447000,4483600,8447500,4484000", WIDTH: "256", HEIGHT: "256",
+            FORMAT: "image/png", TRANSPARENT: "true", STYLES: "", SRS: srs,
+            BBOX: bbox, WIDTH: "256", HEIGHT: "256",
           });
-          const r = await fetch(BASE + "/ows/wms?" + q, { headers: headers(env) });
-          const ct = r.headers.get("content-type") || "";
-          const buf = await r.arrayBuffer();
-          const head = new Uint8Array(buf.slice(0, 8));
-          const isPng = head[0] === 0x89 && head[1] === 0x50;
-          return json({ status: r.status, ct, bytes: buf.byteLength, isPng,
-                        note: isPng ? "WMS works anonymously via proxy" : "not an image",
-                        peek: isPng ? null : new TextDecoder().decode(buf.slice(0, 300)) }, o);
+          const cases = [
+            { tag: "EPSG:2400000", q: mk("EPSG:2400000", "8447000,4483600,8447500,4484000") },
+            { tag: "EPSG:3857",    q: mk("EPSG:3857", "4939691,4936527,4940359,4937259") },
+            { tag: "EPSG:4326",    q: mk("EPSG:4326", "44.374,40.484,44.380,40.489") },
+          ];
+          const out = [];
+          for (const c of cases) {
+            const r = await fetch(BASE + "/ows/wms?" + c.q, { headers: headers(env) });
+            const ct = r.headers.get("content-type") || "";
+            const buf = await r.arrayBuffer();
+            const b = new Uint8Array(buf.slice(0, 4));
+            const isPng = b[0] === 0x89 && b[1] === 0x50;
+            out.push({ srs: c.tag, status: r.status, ct, bytes: buf.byteLength, isPng,
+                       verdict: !isPng ? "ERROR" : buf.byteLength < 1000 ? "blank/empty tile" : "has content",
+                       peek: isPng ? null : new TextDecoder().decode(buf.slice(0, 250)) });
+          }
+          return json(out, o);
         }
         case "/health": {
           const res = await lookup(env, "02-082-0026-0001").catch(() => null);
