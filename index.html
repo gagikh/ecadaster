@@ -96,7 +96,15 @@
       <option value="esriStreet">Esri Streets</option>
       <option value="cyclosm">CyclOSM</option>
       <option value="hot">Humanitarian OSM</option>
-      <option value="ortho">e-cadastre Orthophoto 2002</option>
+      <option value="osmfr">OSM France</option>
+      <option value="osmde">OSM Deutschland</option>
+      <option value="cartoVoyager">Carto Voyager</option>
+      <option value="ortho">Ortho 1:2k · 2002</option>
+      <option value="ortho10k2002">Ortho 1:10k · 2002</option>
+      <option value="ortho10k2004">Ortho 1:10k · 2004</option>
+      <option value="ortho10k2009">Ortho 1:10k · 2009</option>
+      <option value="ortho10k2010">Ortho 1:10k · 2010</option>
+      <option value="ortho10k2011">Ortho 1:10k · 2011</option>
     </select>
   </fieldset>
 
@@ -105,6 +113,7 @@
     <label class="chk"><input type="checkbox" id="ov-parcels" checked> <span data-i18n="ovParcels">Parcels</span></label>
     <label class="chk"><input type="checkbox" id="ov-plabels" checked> <span data-i18n="ovLabels">Parcel labels</span></label>
     <label class="chk"><input type="checkbox" id="ov-buildings"> <span data-i18n="ovBuildings">Buildings</span></label>
+    <label class="chk"><input type="checkbox" id="ov-blocks"> <span data-i18n="ovBlocks">Blocks</span></label>
     <div style="margin-top:8px">
       <span class="hint" data-i18n="opacity">Parcel fill / overlay opacity</span>
       <input type="range" id="opacity" min="0" max="100" value="25">
@@ -138,7 +147,7 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ (գծված հողամասեր)",
-    ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր",
+    ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
     opacity:"Լցման/շերտի թափանցիկություն",
     showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)",
     hint:`Մուտքագրեք կադաստրային ծածկագրերը և սեղմեք <b>Գծել բոլորը</b> — յուրաքանչյուր հողամաս ստանում է իր գույնը՝ պաշտոնական մակերեսով և ընտրովի եզրերի երկարություններով։ Սեղմեք հողամասին՝ մանրամասների համար։ Տվյալները՝ ՀՀ կադաստրի կոմիտեից։`,
@@ -163,7 +172,7 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Plot all", share:"Share", clear:"Clear",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements (plotted parcels)",
-    ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings",
+    ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
     opacity:"Parcel fill / overlay opacity",
     showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)",
     hint:`Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with its official area and optional edge lengths. Click a parcel for details. Boundaries and layers come live from the State Cadastre Committee of Armenia.`,
@@ -188,7 +197,7 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения (показанные участки)",
-    ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания",
+    ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
     opacity:"Прозрачность заливки/слоя",
     showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)",
     hint:`Введите кадастровые коды и нажмите <b>Показать все</b> — каждый участок получает свой цвет, с официальной площадью и опциональными длинами сторон. Нажмите на участок для деталей. Данные — Комитет кадастра Армении.`,
@@ -220,6 +229,10 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
   const lb = document.querySelector(".locate-btn"); if (lb) lb.title = t("locateTitle");
   const ls = document.getElementById("lang"); if (ls) ls.value = LANG;
+  // the cadastre publishes labels per language: parcels_label_am/en/ru
+  if (typeof overlays !== "undefined" && overlays.plabels) {
+    overlays.plabels.setParams({ layers: "parcels_label_" + (LANG === "hy" ? "am" : LANG) });
+  }
   if (typeof renderLegend === "function") renderLegend();
 }
 
@@ -250,9 +263,25 @@ const bases = {
     maxZoom:22, maxNativeZoom:20, attribution:"© CyclOSM, © OpenStreetMap" }),
   hot: L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
     maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, HOT" }),
+  osmfr: L.tileLayer("https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", {
+    maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap France" }),
+  osmde: L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png", {
+    maxZoom:22, maxNativeZoom:19, attribution:"© OpenStreetMap Deutschland" }),
+  cartoVoyager: L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", {
+    maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
   ortho: L.tileLayer.wms(WMS, {
     layers:"ND_S1-2k_Y2002", format:"image/jpeg", transparent:false,
-    version:"1.1.1", maxZoom:22, attribution:CADASTRE_ATTR })
+    version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+  ortho10k2002: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2002", format:"image/jpeg",
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+  ortho10k2004: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2004", format:"image/jpeg",
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+  ortho10k2009: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2009", format:"image/jpeg",
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+  ortho10k2010: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2010", format:"image/jpeg",
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+  ortho10k2011: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2011", format:"image/jpeg",
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR })
 };
 let currentBase = bases.osm.addTo(map);
 
@@ -272,7 +301,9 @@ const overlays = {
   plabels: L.tileLayer.wms(WMS, { layers:"parcels_label_am", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity, minZoom:16, maxZoom:22, tileSize:512, updateWhenIdle:true }),
   buildings: L.tileLayer.wms(WMS, { layers:"buildings", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity, minZoom:15, maxZoom:22, tileSize:512, updateWhenIdle:true })
+    version:"1.1.1", opacity:startOpacity, minZoom:15, maxZoom:22, tileSize:512, updateWhenIdle:true }),
+  blocks: L.tileLayer.wms(WMS, { layers:"blocks", format:"image/png", transparent:true,
+    version:"1.1.1", opacity:startOpacity, minZoom:12, maxZoom:22, tileSize:512, updateWhenIdle:true })
 };
 overlays.parcels.addTo(map);
 overlays.plabels.addTo(map);
@@ -292,6 +323,7 @@ const bind = (id, layer) => document.getElementById(id).onchange = (e) => {
 bind("ov-parcels", overlays.parcels);
 bind("ov-plabels", overlays.plabels);
 bind("ov-buildings", overlays.buildings);
+bind("ov-blocks", overlays.blocks);
 
 const opacityVal = () => document.getElementById("opacity").value / 100;
 function applyOpacity() {
