@@ -89,8 +89,11 @@ WGS84; output matches the reference implementation to 8 decimal places.
 
 - **`EPSG:3857` is silently ignored** (always the same empty tile) — request `EPSG:4326`
   or the native grid. The Worker reprojects Leaflet's mercator bboxes automatically.
-- The service is slow (~0.4–1.7 s/tile), so the Worker caches tiles at the edge and the
-  map uses 512 px tiles that load when panning stops.
+- The service is slow (~0.4–1.7 s/tile), so the map uses 512 px tiles that load when
+  panning stops, and tiles are sent with a 7-day `Cache-Control` (browser cache).
+  The Worker also calls the Cache API, but that is a **no-op on `*.workers.dev`** —
+  Cloudflare only enables edge cache on custom domains, so it would start working
+  automatically if the Worker is ever moved to one.
 
 ## Not available
 
