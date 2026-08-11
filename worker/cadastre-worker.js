@@ -156,6 +156,21 @@ export default {
           const qs = new URLSearchParams(url.search);
           qs.delete("_");
           const dbg = qs.get("debug"); qs.delete("debug");
+          // The cadastre WMS ignores EPSG:3857 (returns a fixed empty tile) but honours
+          // EPSG:4326 — so reproject Leaflet's mercator bbox to lon/lat here.
+          const keyOf = (name) => [...qs.keys()].find(k => k.toLowerCase() === name);
+          const srsKey = keyOf("srs") || keyOf("crs"), bboxKey = keyOf("bbox");
+          if (srsKey && bboxKey && /3857|900913/.test(qs.get(srsKey))) {
+            const R = 6378137;
+            const m2ll = (x, y) => [ (x / R) * 180 / Math.PI,
+                                     Math.atan(Math.sinh(y / R)) * 180 / Math.PI ];
+            const [a, b, c, d] = qs.get(bboxKey).split(",").map(Number);
+            if ([a, b, c, d].every(n => !Number.isNaN(n))) {
+              const [minx, miny] = m2ll(a, b), [maxx, maxy] = m2ll(c, d);
+              qs.set(bboxKey, [minx, miny, maxx, maxy].map(n => n.toFixed(7)).join(","));
+              qs.set(srsKey, "EPSG:4326");
+            }
+          }
           const r = await fetch(BASE + "/ows/wms?" + qs.toString(), { headers: headers(env) });
           if (dbg) {   // report metadata instead of the image, for diagnosis
             const ct0 = r.headers.get("content-type") || "";

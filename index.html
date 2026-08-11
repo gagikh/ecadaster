@@ -230,23 +230,23 @@ map.zoomControl.setPosition("topright");
 // Basemaps
 const bases = {
   osm: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom:20, attribution:"© OpenStreetMap contributors" }),
+    maxZoom:22, maxNativeZoom:19, attribution:"© OpenStreetMap contributors" }),
   carto: L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
-    maxZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
+    maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
   esri: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom:20, attribution:"© Esri, Maxar" }),
+    maxZoom:22, maxNativeZoom:19, attribution:"© Esri, Maxar" }),
   cartoDark: L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
-    maxZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
+    maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
   topo: L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
-    maxZoom:17, attribution:"© OpenTopoMap (CC-BY-SA), © OpenStreetMap" }),
+    maxZoom:22, maxNativeZoom:17, attribution:"© OpenTopoMap (CC-BY-SA), © OpenStreetMap" }),
   esriTopo: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom:19, attribution:"© Esri" }),
+    maxZoom:22, maxNativeZoom:19, attribution:"© Esri" }),
   esriStreet: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom:19, attribution:"© Esri" }),
+    maxZoom:22, maxNativeZoom:19, attribution:"© Esri" }),
   cyclosm: L.tileLayer("https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", {
-    maxZoom:20, attribution:"© CyclOSM, © OpenStreetMap" }),
+    maxZoom:22, maxNativeZoom:20, attribution:"© CyclOSM, © OpenStreetMap" }),
   hot: L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
-    maxZoom:20, attribution:"© OpenStreetMap, HOT" }),
+    maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, HOT" }),
   ortho: L.tileLayer.wms(WMS, {
     layers:"ND_S1-2k_Y2002", format:"image/jpeg", transparent:false,
     version:"1.1.1", maxZoom:22, attribution:CADASTRE_ATTR })
