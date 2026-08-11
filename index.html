@@ -237,7 +237,10 @@ function applyI18n() {
 }
 
 // ---- Map ----------------------------------------------------------------
-const map = L.map("map", { center:[40.3, 44.9], zoom:8, zoomControl:true });  // whole of Armenia
+// Armenia only: bounds keep the view on-country, minZoom stops world zoom-out
+const AM_BOUNDS = L.latLngBounds([38.75, 43.35], [41.40, 46.70]);
+const map = L.map("map", { center:[40.3, 44.9], zoom:8, zoomControl:true,
+  minZoom:6, maxBounds:AM_BOUNDS.pad(0.35), maxBoundsViscosity:0.7 });
 map.zoomControl.setPosition("topright");
 
 // Basemaps
@@ -271,17 +274,17 @@ const bases = {
     maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
   ortho: L.tileLayer.wms(WMS, {
     layers:"ND_S1-2k_Y2002", format:"image/jpeg", transparent:false,
-    version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+    version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
   ortho10k2002: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2002", format:"image/jpeg",
-    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
   ortho10k2004: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2004", format:"image/jpeg",
-    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
   ortho10k2009: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2009", format:"image/jpeg",
-    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
   ortho10k2010: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2010", format:"image/jpeg",
-    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR }),
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
   ortho10k2011: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2011", format:"image/jpeg",
-    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, attribution:CADASTRE_ATTR })
+    transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR })
 };
 let currentBase = bases.osm.addTo(map);
 
@@ -546,7 +549,13 @@ async function applyStateFromURL() {
     document.getElementById("codes").value = q.get("codes").split(",").join("\n");
     await plotAll(!!hasView);                    // don't auto-fit if a view is shared
   }
-  if (hasView) map.setView([+q.get("lat"), +q.get("lng")], +q.get("z"));
+  if (hasView) {
+    const ll = L.latLng(+q.get("lat"), +q.get("lng"));
+    const z  = Math.max(6, Math.min(22, +q.get("z") || 8));
+    if (AM_BOUNDS.pad(0.35).contains(ll)) map.setView(ll, z);
+    else if (plotted.some(p => p.ok)) { /* keep the auto-fit on the plotted parcels */ }
+    else map.setView([40.3, 44.9], 8);
+  }
 }
 async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
 try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; } catch { LANG = "hy"; }
