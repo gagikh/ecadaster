@@ -81,6 +81,22 @@ function toWgs(x, y) {
   return [lat * 180 / Math.PI, lon * 180 / Math.PI];
 }
 
+// WGS84 -> EPSG:2400000 (inverse of toWgs; verified roundtrip < 1 mm)
+function toGk8(lat, lon) {
+  const a = 6378245.0, f = 1 / 298.3, e2 = f * (2 - f), FE = 8500000, lon0 = 45 * Math.PI / 180;
+  const p = lat * Math.PI / 180, l = lon * Math.PI / 180, ep2 = e2 / (1 - e2);
+  const N = a / Math.sqrt(1 - e2 * Math.sin(p) ** 2);
+  const T = Math.tan(p) ** 2, C = ep2 * Math.cos(p) ** 2, A = (l - lon0) * Math.cos(p);
+  const M = a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * p
+        - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * Math.sin(2 * p)
+        + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * p)
+        - (35 * e2 ** 3 / 3072) * Math.sin(6 * p));
+  const x = FE + N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T * T + 72 * C - 58 * ep2) * A ** 5 / 120);
+  const y = M + N * Math.tan(p) * (A * A / 2 + (5 - T + 9 * C + 4 * C * C) * A ** 4 / 24
+        + (61 - 58 * T + T * T + 600 * C - 330 * ep2) * A ** 6 / 720);
+  return [x, y];
+}
+
 // ---- code -> geometry ----------------------------------------------------
 // 1) infoShowData: code -> row (rows arrive in `results`, id is `{rowid}`)
 // 2) infoGetGeom: row -> centroid POINT
@@ -144,23 +160,50 @@ export default {
         case "/wms": {
           const qs = new URLSearchParams(url.search);
           qs.delete("_");
-          // The cadastre WMS ignores EPSG:3857 (returns a fixed empty tile) but
-          // honours EPSG:4326 — reproject Leaflet's mercator bbox to lon/lat.
+          // Projection handling, per layer type:
+          //   vector layers (parcels/blocks/buildings/labels) -> EPSG:4326 works
+          //   raster orthophotos (ND_*)  -> only render in the native EPSG:2400000
+          // EPSG:3857 is silently ignored upstream, so never pass it through.
           const keyOf = (n) => [...qs.keys()].find(k => k.toLowerCase() === n);
           const srsKey = keyOf("srs") || keyOf("crs"), bboxKey = keyOf("bbox");
-          if (srsKey && bboxKey && /3857|900913/.test(qs.get(srsKey))) {
-            const R = 6378137;
-            const m2ll = (x, y) => [(x / R) * 180 / Math.PI,
-                                    Math.atan(Math.sinh(y / R)) * 180 / Math.PI];
-            const [a, b, c, d] = qs.get(bboxKey).split(",").map(Number);
-            if ([a, b, c, d].every(n => !Number.isNaN(n))) {
-              const [minx, miny] = m2ll(a, b), [maxx, maxy] = m2ll(c, d);
-              qs.set(bboxKey, [minx, miny, maxx, maxy].map(n => n.toFixed(7)).join(","));
-              qs.set(srsKey, "EPSG:4326");
+          if (srsKey && bboxKey) {
+            const cur = qs.get(srsKey) || "";
+            const v = qs.get(bboxKey).split(",").map(Number);
+            if (v.length === 4 && v.every(n => !Number.isNaN(n))) {
+              let [w, s2, e, n2] = v;                       // lon/lat bounds
+              if (/3857|900913/.test(cur)) {
+                const R = 6378137;
+                const m2ll = (x, y) => [(x / R) * 180 / Math.PI,
+                                        Math.atan(Math.sinh(y / R)) * 180 / Math.PI];
+                [w, s2] = m2ll(v[0], v[1]);
+                [e, n2] = m2ll(v[2], v[3]);
+              }
+              if (/^ND_/.test(qs.get(keyOf("layers")) || "")) {
+                const c = [[s2, w], [s2, e], [n2, w], [n2, e]].map(([la, lo]) => toGk8(la, lo));
+                const xs = c.map(p => p[0]), ys = c.map(p => p[1]);
+                qs.set(bboxKey, [Math.min(...xs), Math.min(...ys),
+                                 Math.max(...xs), Math.max(...ys)].map(n => n.toFixed(2)).join(","));
+                qs.set(srsKey, "EPSG:2400000");
+              } else if (/3857|900913/.test(cur)) {
+                qs.set(bboxKey, [w, s2, e, n2].map(n => n.toFixed(7)).join(","));
+                qs.set(srsKey, "EPSG:4326");
+              }
             }
           }
 
+          const dbg = qs.get("debug"); qs.delete("debug");
           const upstream = BASE + "/ows/wms?" + qs.toString();
+          if (dbg) {                       // report tile metadata instead of the image
+            const rd = await fetch(upstream, { headers: headers() });
+            const ctd = rd.headers.get("content-type") || "";
+            const buf = await rd.arrayBuffer();
+            const h = new Uint8Array(buf.slice(0, 4));
+            const isImg = h[0] === 0x89 || (h[0] === 0xFF && h[1] === 0xD8);
+            return json({ layers: qs.get(keyOf("layers")), status: rd.status, ct: ctd,
+                          bytes: buf.byteLength, isImg,
+                          verdict: !isImg ? "ERROR" : buf.byteLength < 2000 ? "blank/empty" : "has content",
+                          peek: isImg ? null : new TextDecoder().decode(buf.slice(0, 200)) }, o);
+          }
           const cache = caches.default, cacheKey = new Request(upstream);
           const hit = await cache.match(cacheKey);
           if (hit) return hit;
