@@ -136,7 +136,7 @@ async function lookup(env, code) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const o = request.headers.get("Origin") || "";
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(o) });
     const url = new URL(request.url);
@@ -171,13 +171,24 @@ export default {
               qs.set(srsKey, "EPSG:4326");
             }
           }
-          const r = await fetch(BASE + "/ows/wms?" + qs.toString(), { headers: headers(env) });
+          const upstream = BASE + "/ows/wms?" + qs.toString();
+          // Edge cache: the cadastre WMS is slow (~0.4-1.7s/tile), so serve repeats instantly.
+          const cache = caches.default;
+          const cacheKey = new Request(upstream, { method: "GET" });
+          if (!dbg) {
+            const hit = await cache.match(cacheKey);
+            if (hit) return hit;
+          }
+          let r = await fetch(upstream, { headers: headers(env) });
+          if (!r.ok || !(r.headers.get("content-type") || "").startsWith("image")) {
+            r = await fetch(upstream, { headers: headers(env) });        // one retry
+          }
           if (dbg) {   // report metadata instead of the image, for diagnosis
             const ct0 = r.headers.get("content-type") || "";
             const buf = await r.arrayBuffer();
             const h = new Uint8Array(buf.slice(0, 4));
             const png = h[0] === 0x89 && h[1] === 0x50;
-            return json({ upstream: BASE + "/ows/wms?" + qs.toString(),
+            return json({ upstream,
                           status: r.status, ct: ct0, bytes: buf.byteLength, isPng: png,
                           verdict: !png ? "ERROR" : buf.byteLength < 500 ? "blank" : "has content",
                           peek: png ? null : new TextDecoder().decode(buf.slice(0, 300)) }, o);
@@ -190,14 +201,47 @@ export default {
               "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
             ), c => c.charCodeAt(0));
             return new Response(blank, { status: 200, headers: {
-              "Content-Type": "image/png", "Cache-Control": "public, max-age=300",
+              "Content-Type": "image/png", "Cache-Control": "no-store",   // never cache a miss
               "Access-Control-Allow-Origin": "*", "X-Upstream-Status": String(r.status) } });
           }
-          return new Response(r.body, {
+          const img = await r.arrayBuffer();
+          const resp = new Response(img, {
             status: 200,
-            headers: { "Content-Type": ct, "Cache-Control": "public, max-age=86400",
+            headers: { "Content-Type": ct, "Cache-Control": "public, max-age=604800",
                        "Access-Control-Allow-Origin": "*" },
           });
+          ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+          return resp;
+        }
+        case "/tilescan": {
+          // scan a grid of web-mercator tiles around a point; report which return content
+          const lat = parseFloat(url.searchParams.get("lat") || "40.4859");
+          const lon = parseFloat(url.searchParams.get("lng") || "44.3776");
+          const z   = parseInt(url.searchParams.get("z") || "17", 10);
+          const lay = url.searchParams.get("layers") || "parcels";
+          const n = 2 ** z;
+          const xt = Math.floor((lon + 180) / 360 * n);
+          const yt = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+          const ll = (x, y) => [x / n * 360 - 180,
+            Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI];
+          const out = [];
+          for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 3; dx++) {
+            const [w, north] = ll(xt + dx, yt + dy), [e, south] = ll(xt + dx + 1, yt + dy + 1);
+            const q = new URLSearchParams({ service: "WMS", version: "1.1.1", request: "GetMap",
+              layers: lay, styles: "", format: "image/png", transparent: "true",
+              srs: "EPSG:4326", bbox: [w, south, e, north].map(v => v.toFixed(7)).join(","),
+              width: "256", height: "256" });
+            const t0 = Date.now();
+            const rr = await fetch(BASE + "/ows/wms?" + q, { headers: headers(env) });
+            const ct = rr.headers.get("content-type") || "";
+            const buf = await rr.arrayBuffer();
+            const h = new Uint8Array(buf.slice(0, 4));
+            out.push({ tile: `${xt + dx},${yt + dy}`, status: rr.status, ms: Date.now() - t0,
+                       bytes: buf.byteLength, png: h[0] === 0x89,
+                       verdict: h[0] !== 0x89 ? "ERROR" : buf.byteLength < 500 ? "blank" : "content",
+                       peek: h[0] === 0x89 ? null : new TextDecoder().decode(buf.slice(0, 200)) });
+          }
+          return json({ z, layers: lay, tiles: out }, o);
         }
         case "/wmstest": {
           // compare SRS support: native 2400000 vs web-mercator 3857 (what Leaflet sends)

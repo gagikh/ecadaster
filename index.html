@@ -265,11 +265,11 @@ document.getElementById("basemap").onchange = (e) => { switchBase(e.target.value
 const startOpacity = 0.7;
 const overlays = {
   parcels: L.tileLayer.wms(WMS, { layers:"parcels", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity, minZoom:14, maxZoom:22, attribution:CADASTRE_ATTR }),
+    version:"1.1.1", opacity:startOpacity, minZoom:14, maxZoom:22, tileSize:512, updateWhenIdle:true, attribution:CADASTRE_ATTR }),
   plabels: L.tileLayer.wms(WMS, { layers:"parcels_label_am", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity, minZoom:16, maxZoom:22 }),
+    version:"1.1.1", opacity:startOpacity, minZoom:16, maxZoom:22, tileSize:512, updateWhenIdle:true }),
   buildings: L.tileLayer.wms(WMS, { layers:"buildings", format:"image/png", transparent:true,
-    version:"1.1.1", opacity:startOpacity, minZoom:15, maxZoom:22 })
+    version:"1.1.1", opacity:startOpacity, minZoom:15, maxZoom:22, tileSize:512, updateWhenIdle:true })
 };
 overlays.parcels.addTo(map);
 overlays.plabels.addTo(map);
