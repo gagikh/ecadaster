@@ -75,13 +75,7 @@
   <textarea id="codes" rows="7" data-i18n-ph="codesPh" placeholder="One code per line, e.g.
 01-001-0658-0020
 01-001-0658-0017
-01-001-0658-0021">01-001-0658-0020
-01-001-0658-0017
-01-001-0658-0021
-02-082-0004-0002
-02-082-0205-0015
-02-082-0206-0046
-02-082-0204-0080</textarea>
+01-001-0658-0021"></textarea>
   <div class="row" style="margin-top:8px">
     <button id="find" style="flex:1" data-i18n="plot">Plot all</button>
     <button id="share" style="background:#10b981;color:#04283a" data-i18n="share">Share</button>
@@ -515,7 +509,7 @@ map.on("moveend", syncURL);
 window.addEventListener("popstate", restore);
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
-let meMarker = null, meCircle = null, watching = false;
+let meMarker = null, meCircle = null, watching = false, firstFix = false;
 
 // Locate button = a third button joined under the zoom +/- bar (native look)
 const locBtn = L.DomUtil.create("a", "locate-btn", map.zoomControl.getContainer());
@@ -540,7 +534,8 @@ function toggleLocate(btn) {
   watching = true;
   if (btn) btn.classList.add("active");
   status(t("locating"));
-  map.locate({ setView:true, maxZoom:18, watch:true, enableHighAccuracy:true });
+  firstFix = true;
+  map.locate({ watch:true, enableHighAccuracy:true });
 }
 
 map.on("locationfound", (e) => {
@@ -553,6 +548,7 @@ map.on("locationfound", (e) => {
     meMarker.setLatLng(e.latlng);
     meCircle.setLatLng(e.latlng).setRadius(r);
   }
+  if (firstFix) { map.setView(e.latlng, 18); firstFix = false; }
   status(t("locAcc", Math.round(r)));
 });
 
