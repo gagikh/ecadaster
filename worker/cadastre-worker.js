@@ -35,15 +35,12 @@ const json = (d, o, s = 200) => new Response(JSON.stringify(d), {
              "Cache-Control": "public, max-age=86400", ...cors(o) },
 });
 
-let ENV = {};                      // set per request; lets secrets override the defaults
-const sessionUid = () => (ENV && ENV.UID) || UID;
 const headers = () => ({
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
   "Accept": "*/*",
   "Accept-Language": "hy,en;q=0.9",
   "X-Requested-With": "XMLHttpRequest",
-  "Referer": `${BASE}/?uid=${sessionUid()}&lang=am`,
-  ...((ENV && ENV.JSESSIONID) ? { "Cookie": `JSESSIONID=${ENV.JSESSIONID}` } : {}),
+  "Referer": `${BASE}/?uid=${UID}&lang=am`,   // the only thing the server validates
 });
 
 const get = async (path) => {
@@ -156,7 +153,6 @@ const BLANK = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfD
 
 export default {
   async fetch(request, env, ctx) {
-    ENV = env || {};
     const o = request.headers.get("Origin") || "";
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(o) });
     const url = new URL(request.url);
@@ -193,6 +189,9 @@ export default {
                 [w, s2] = m2ll(v[0], v[1]);
                 [e, n2] = m2ll(v[2], v[3]);
               }
+              // Rasters (ND_*) only render in the native grid; vector layers
+              // reproject fine to EPSG:4326, which keeps tiles aligned exactly
+              // (a native bbox would be slightly skewed by meridian convergence).
               if (/^ND_/.test(qs.get(keyOf("layers")) || "")) {
                 const c = [[s2, w], [s2, e], [n2, w], [n2, e]].map(([la, lo]) => toGk8(la, lo));
                 const xs = c.map(p => p[0]), ys = c.map(p => p[1]);
@@ -248,68 +247,10 @@ export default {
           return resp;
         }
 
-        // TEMPORARY exploration probe (restricted to cadastre/geoportal hosts).
-        //   /probe?u=<url>[&m=POST&b=<body>&r=<referer>]
-        case "/probe": {
-          const u = url.searchParams.get("u");
-          if (!u) return json({ error: "need ?u=" }, o);
-          try {
-            const host = new URL(u).hostname;
-            const allowed = ["maparmenia.am", "gp.e-cadastre.am", "www.e-cadastre.am",
-                             "cadastre.am", "gis.cadastre.am"];
-            if (!allowed.some(h => host === h || host.endsWith("." + h)))
-              return json({ error: "host not allowed", host }, o);
-            const m = (url.searchParams.get("m") || "GET").toUpperCase();
-            const b = url.searchParams.get("b");
-            const r = url.searchParams.get("r");
-            const h = { ...headers() };
-            if (r) h["Referer"] = r;
-            if (m === "POST") h["Content-Type"] = "application/x-www-form-urlencoded";
-            const resp = await fetch(u, { method: m, headers: h, body: m === "POST" ? b : undefined });
-            const ct = resp.headers.get("content-type") || "";
-            const buf = await resp.arrayBuffer();
-            const head = new Uint8Array(buf.slice(0, 4));
-            const isImg = head[0] === 0x89 || (head[0] === 0xFF && head[1] === 0xD8);
-            return json({ url: u, status: resp.status, ct, bytes: buf.byteLength, isImg,
-                          text: isImg ? "(binary image)" : new TextDecoder().decode(buf.slice(0, 3000)) }, o);
-          } catch (e) {
-            return json({ url: u, failed: String(e && e.message || e) }, o);   // always 200
-          }
-        }
-        // TEMPORARY: run the 3-step chain and show each RAW upstream reply.
-        case "/q": {
-          const c = (url.searchParams.get("c") || "02-062-0001-0001").trim();
-          const out = { uid: sessionUid(), cookie: !!(ENV && ENV.JSESSIONID) };
-          try {
-            out.step1 = (await post("/data/info", {
-              action: "infoShowData",
-              data: JSON.stringify({ p_className: LAYER, p_prm_id: CODE_ATTR, p_prm_val: c }),
-              start: "0", limit: "5",
-            })).slice(0, 700);
-            let j = null; try { j = JSON.parse(out.step1); } catch (e) {}
-            const row = j && (j.results || [])[0];
-            out.rowid = row ? row["{rowid}"] : null;
-            if (row) {
-              out.step2 = (await post("/data/info", {
-                action: "infoGetGeom",
-                data: JSON.stringify({ p_className: LAYER, p_id: String(row["{rowid}"]) }),
-              })).slice(0, 400);
-              let cg = null; try { cg = JSON.parse(out.step2); } catch (e) {}
-              const p = cg && cg.wkt ? parseWkt(cg.wkt) : null;
-              if (p && p.pts.length) {
-                const [X, Y] = p.pts[0];
-                out.step3 = (await post("/data/info?action=infoGetDataAndGeom", {
-                  p_layer_i: LAYER, p_x_i: String(Y), p_y_i: String(X), p_buff_i: "1", p_loc_i: "am",
-                })).slice(0, 700);
-              }
-            }
-          } catch (e) { out.failed = String(e && e.message || e); }
-          return json(out, o);
-        }
         case "/health": {
           const res = await lookup("02-082-0026-0001").catch(() => null);
-          return json({ ok: !!res, uid: sessionUid(), cookie: !!(ENV && ENV.JSESSIONID),
-                        source: res ? res.source : null, area: res ? res.area : null }, o);
+          return json({ ok: !!res, source: res ? res.source : null,
+                        area: res ? res.area : null }, o);
         }
 
         default:

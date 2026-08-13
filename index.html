@@ -581,6 +581,35 @@ restore();
 map.on("moveend", syncURL);
 window.addEventListener("popstate", restore);
 
+// EPSG:2400000 (Armenian GK zone 8) <-> WGS84. Same maths as the Worker.
+function toGk8(lat, lon) {
+  const a=6378245.0, f=1/298.3, e2=f*(2-f), FE=8500000, lon0=45*Math.PI/180;
+  const p=lat*Math.PI/180, l=lon*Math.PI/180, ep2=e2/(1-e2);
+  const N=a/Math.sqrt(1-e2*Math.sin(p)**2), T=Math.tan(p)**2, C=ep2*Math.cos(p)**2;
+  const A=(l-lon0)*Math.cos(p);
+  const M=a*((1-e2/4-3*e2**2/64-5*e2**3/256)*p
+      -(3*e2/8+3*e2**2/32+45*e2**3/1024)*Math.sin(2*p)
+      +(15*e2**2/256+45*e2**3/1024)*Math.sin(4*p)-(35*e2**3/3072)*Math.sin(6*p));
+  return [FE + N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120),
+          M + N*Math.tan(p)*(A*A/2+(5-T+9*C+4*C*C)*A**4/24
+              +(61-58*T+T*T+600*C-330*ep2)*A**6/720)];
+}
+function fromGk8(x, y) {
+  const a=6378245.0, f=1/298.3, e2=f*(2-f), FE=8500000, lon0=45*Math.PI/180;
+  const E=x-FE, N=y, e1=(1-Math.sqrt(1-e2))/(1+Math.sqrt(1-e2));
+  const mu=N/(a*(1-e2/4-3*e2**2/64-5*e2**3/256));
+  const p1=mu+(3*e1/2-27*e1**3/32)*Math.sin(2*mu)+(21*e1**2/16-55*e1**4/32)*Math.sin(4*mu)
+          +(151*e1**3/96)*Math.sin(6*mu);
+  const sp=Math.sin(p1), cp=Math.cos(p1), tp=Math.tan(p1), ep2=e2/(1-e2);
+  const C1=ep2*cp*cp, T1=tp*tp;
+  const R1=a*(1-e2)/Math.pow(1-e2*sp*sp,1.5), N1=a/Math.sqrt(1-e2*sp*sp), D=E/N1;
+  const lat=p1-(N1*tp/R1)*(D*D/2-(5+3*T1+10*C1-4*C1*C1-9*ep2)*D**4/24
+      +(61+90*T1+298*C1+45*T1*T1-252*ep2-3*C1*C1)*D**6/720);
+  const lon=lon0+(D-(1+2*T1+C1)*D**3/6
+      +(5-2*C1+28*T1-3*C1*C1+8*ep2+24*T1*T1)*D**5/120)/cp;
+  return [lat*180/Math.PI, lon*180/Math.PI];
+}
+
 // ---- Derive a boundary from the official raster --------------------------
 // The cadastre disabled its vector geometry service, but the `parcels` WMS
 // layer still renders true boundaries. We fetch that image around the parcel's
@@ -614,14 +643,13 @@ function simplify(pts, tol) {                     // Douglas-Peucker
 
 async function traceBoundary(lat, lng, area) {
   const px = 768;
+  const [CX, CY] = toGk8(lat, lng);               // work in the native grid
   for (const mult of [4, 8, 16]) {                // widen if the parcel overflows
-    const side = Math.max(60, mult * Math.sqrt(Math.max(area, 100)));
-    const dLat = (side/2) / 111320;
-    const dLng = (side/2) / (111320 * Math.cos(lat * Math.PI/180));
-    const bbox = [lng-dLng, lat-dLat, lng+dLng, lat+dLat];
+    const half = Math.max(30, mult * Math.sqrt(Math.max(area, 100)) / 2);
+    const bbox = [CX-half, CY-half, CX+half, CY+half];
     const url = API + "/wms?" + new URLSearchParams({
       service:"WMS", version:"1.1.1", request:"GetMap", layers:"parcels", styles:"",
-      format:"image/png", transparent:"true", srs:"EPSG:4326",
+      format:"image/png", transparent:"true", srs:"EPSG:2400000",
       bbox: bbox.join(","), width:String(px), height:String(px) });
     let img; try { img = await loadImg(url); } catch (e) { return null; }
     const cv = document.createElement("canvas"); cv.width = cv.height = px;
@@ -668,10 +696,9 @@ async function traceBoundary(lat, lng, area) {
     if (ring.length < 8) continue;
 
     const simple = simplify(ring, 1.2);
-    return simple.map(([x, y]) => [
-      bbox[3] - (y / px) * (bbox[3] - bbox[1]),
+    return simple.map(([x, y]) => fromGk8(
       bbox[0] + (x / px) * (bbox[2] - bbox[0]),
-    ]);
+      bbox[3] - (y / px) * (bbox[3] - bbox[1])));
   }
   return null;
 }
