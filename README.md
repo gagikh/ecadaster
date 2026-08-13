@@ -68,13 +68,22 @@ data={"p_className":"parcels","p_id":"{ID}'7241478'"}
 ```
 → `{ success:true, wkt:"POINT (...)" }` — only the centre point.
 
-**4. Full polygon** (the useful one)
+**4. Full polygon** — ⚠️ **disabled by the cadastre (Aug 2026)**
 ```
 action=infoGetDataAndGeom
 p_layer_i=parcels & p_x_i=<northing> & p_y_i=<easting> & p_buff_i=1 & p_loc_i=am
 ```
-Feed it the centroid from step 3 and it returns the parcel's **full boundary** as WKT.
-Note the axis naming: `p_x_i` is the *northing*, `p_y_i` the *easting*.
+This used to return the parcel's full boundary as WKT. It now replies
+`{"success":false,"messageDetails":"Parcel geometry service is disabled"}`.
+Tested and still blocked with: an authenticated `uid`, a live `JSESSIONID`
+cookie, and anonymous access. No alternative path is open —
+`GetFeatureInfo` returns `no such layer`, WFS 404s, and `doExport` is a paid
+draw-an-area export. The call is kept in the Worker so boundaries return
+automatically if the service is switched back on.
+
+Third-party sites (e.g. map.astat.am) still serve polygons for brand-new codes,
+so some form of privileged access exists — IP allowlisting, a licence, or a
+private API. It could not be reproduced from outside.
 
 ## Coordinates
 
@@ -116,7 +125,7 @@ wrangler deploy          # no secrets required
 
 | Endpoint | Purpose |
 |---|---|
-| `/parcel?code=RR-BBB-SSSS-UUUU` | `{success, area, coords:[[lat,lng]], geometryType, updated}` |
+| `/parcel?code=RR-BBB-SSSS-UUUU` | `{success, area, coords:[[lat,lng]], geometryType, updated}` — currently a centroid `POINT` + official area (see above) |
 | `/wms?<WMS params>` | tile passthrough (adds Referer, reprojects, caches) |
 | `/health` | upstream liveness |
 

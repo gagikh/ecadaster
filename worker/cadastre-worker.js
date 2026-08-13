@@ -15,6 +15,7 @@
  */
 
 const BASE  = "https://gp.e-cadastre.am:8443/arpis-geoportal";
+const UID   = "0";               // anonymous session id accepted by the server
 const LAYER = "parcels";
 const CODE_ATTR = "2260";                 // parcels.cadastre_code ("Կադաստրային կոդ")
 
@@ -34,14 +35,21 @@ const json = (d, o, s = 200) => new Response(JSON.stringify(d), {
              "Cache-Control": "public, max-age=86400", ...cors(o) },
 });
 
+let ENV = {};                      // set per request; lets secrets override the defaults
+const sessionUid = () => (ENV && ENV.UID) || UID;
 const headers = () => ({
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
   "Accept": "*/*",
   "Accept-Language": "hy,en;q=0.9",
   "X-Requested-With": "XMLHttpRequest",
-  "Referer": `${BASE}/?uid=0&lang=am`,     // the only thing the server validates
+  "Referer": `${BASE}/?uid=${sessionUid()}&lang=am`,
+  ...((ENV && ENV.JSESSIONID) ? { "Cookie": `JSESSIONID=${ENV.JSESSIONID}` } : {}),
 });
 
+const get = async (path) => {
+  const r = await fetch(BASE + path, { headers: headers() });
+  return r.text();
+};
 const post = async (path, params) => {
   const r = await fetch(BASE + path, {
     method: "POST",
@@ -120,20 +128,26 @@ async function lookup(code) {
   if (!cpt || !cpt.pts.length) return null;
   const [X, Y] = cpt.pts[0];
 
-  let wkt = cg.wkt, source = "centroid";
-  for (const buff of ["1", "10", "100"]) {
+  // 3) centroid -> full polygon.
+  //    The cadastre disabled this service ("Parcel geometry service is
+  //    disabled"); the call is kept so polygons return automatically if they
+  //    re-enable it. Until then /parcel yields the centroid + official area.
+  let wkt = cg.wkt, source = "centroid", ring = null;
+  {
+
     const t3 = await post("/data/info?action=infoGetDataAndGeom", {
-      p_layer_i: LAYER, p_x_i: String(Y), p_y_i: String(X), p_buff_i: buff, p_loc_i: "am",
+      p_layer_i: LAYER, p_x_i: String(Y), p_y_i: String(X), p_buff_i: "1", p_loc_i: "am",
     });
-    let g; try { g = JSON.parse(t3); } catch { continue; }
-    if (g && g.success && g.wkt && !/^\s*POINT/i.test(g.wkt)) { wkt = g.wkt; source = "polygon"; break; }
+    let g; try { g = JSON.parse(t3); } catch (e) { g = null; }
+    if (g && g.success && g.wkt && !/^\s*POINT/i.test(g.wkt)) { wkt = g.wkt; source = "polygon"; }
   }
 
   const parsed = parseWkt(wkt);
   return {
     code, source, area: row.area, updated: row.ins_time_of_execution,
-    geometryType: parsed ? parsed.type : null,
-    coords: parsed ? parsed.pts.map(([x, y]) => toWgs(x, y)) : [],
+    geometryType: ring ? "POLYGON" : (parsed ? parsed.type : null),
+    coords: ring ? ring.map(([x, y]) => toWgs(x, y))
+                 : (parsed ? parsed.pts.map(([x, y]) => toWgs(x, y)) : []),
   };
 }
 
@@ -142,6 +156,7 @@ const BLANK = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfD
 
 export default {
   async fetch(request, env, ctx) {
+    ENV = env || {};
     const o = request.headers.get("Origin") || "";
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(o) });
     const url = new URL(request.url);
@@ -204,6 +219,13 @@ export default {
                           verdict: !isImg ? "ERROR" : buf.byteLength < 2000 ? "blank/empty" : "has content",
                           peek: isImg ? null : new TextDecoder().decode(buf.slice(0, 200)) }, o);
           }
+          // GetFeatureInfo returns JSON/XML, not an image — pass it through as-is
+          if (/getfeatureinfo/i.test(qs.get(keyOf("request")) || "")) {
+            const rf = await fetch(upstream, { headers: headers() });
+            return new Response(await rf.text(), { status: rf.status, headers: {
+              "Content-Type": rf.headers.get("content-type") || "text/plain",
+              "Access-Control-Allow-Origin": "*" } });
+          }
           const cache = caches.default, cacheKey = new Request(upstream);
           const hit = await cache.match(cacheKey);
           if (hit) return hit;
@@ -226,9 +248,68 @@ export default {
           return resp;
         }
 
+        // TEMPORARY exploration probe (restricted to cadastre/geoportal hosts).
+        //   /probe?u=<url>[&m=POST&b=<body>&r=<referer>]
+        case "/probe": {
+          const u = url.searchParams.get("u");
+          if (!u) return json({ error: "need ?u=" }, o);
+          try {
+            const host = new URL(u).hostname;
+            const allowed = ["maparmenia.am", "gp.e-cadastre.am", "www.e-cadastre.am",
+                             "cadastre.am", "gis.cadastre.am"];
+            if (!allowed.some(h => host === h || host.endsWith("." + h)))
+              return json({ error: "host not allowed", host }, o);
+            const m = (url.searchParams.get("m") || "GET").toUpperCase();
+            const b = url.searchParams.get("b");
+            const r = url.searchParams.get("r");
+            const h = { ...headers() };
+            if (r) h["Referer"] = r;
+            if (m === "POST") h["Content-Type"] = "application/x-www-form-urlencoded";
+            const resp = await fetch(u, { method: m, headers: h, body: m === "POST" ? b : undefined });
+            const ct = resp.headers.get("content-type") || "";
+            const buf = await resp.arrayBuffer();
+            const head = new Uint8Array(buf.slice(0, 4));
+            const isImg = head[0] === 0x89 || (head[0] === 0xFF && head[1] === 0xD8);
+            return json({ url: u, status: resp.status, ct, bytes: buf.byteLength, isImg,
+                          text: isImg ? "(binary image)" : new TextDecoder().decode(buf.slice(0, 3000)) }, o);
+          } catch (e) {
+            return json({ url: u, failed: String(e && e.message || e) }, o);   // always 200
+          }
+        }
+        // TEMPORARY: run the 3-step chain and show each RAW upstream reply.
+        case "/q": {
+          const c = (url.searchParams.get("c") || "02-062-0001-0001").trim();
+          const out = { uid: sessionUid(), cookie: !!(ENV && ENV.JSESSIONID) };
+          try {
+            out.step1 = (await post("/data/info", {
+              action: "infoShowData",
+              data: JSON.stringify({ p_className: LAYER, p_prm_id: CODE_ATTR, p_prm_val: c }),
+              start: "0", limit: "5",
+            })).slice(0, 700);
+            let j = null; try { j = JSON.parse(out.step1); } catch (e) {}
+            const row = j && (j.results || [])[0];
+            out.rowid = row ? row["{rowid}"] : null;
+            if (row) {
+              out.step2 = (await post("/data/info", {
+                action: "infoGetGeom",
+                data: JSON.stringify({ p_className: LAYER, p_id: String(row["{rowid}"]) }),
+              })).slice(0, 400);
+              let cg = null; try { cg = JSON.parse(out.step2); } catch (e) {}
+              const p = cg && cg.wkt ? parseWkt(cg.wkt) : null;
+              if (p && p.pts.length) {
+                const [X, Y] = p.pts[0];
+                out.step3 = (await post("/data/info?action=infoGetDataAndGeom", {
+                  p_layer_i: LAYER, p_x_i: String(Y), p_y_i: String(X), p_buff_i: "1", p_loc_i: "am",
+                })).slice(0, 700);
+              }
+            }
+          } catch (e) { out.failed = String(e && e.message || e); }
+          return json(out, o);
+        }
         case "/health": {
           const res = await lookup("02-082-0026-0001").catch(() => null);
-          return json({ ok: !!res, anonymous: true, area: res ? res.area : null }, o);
+          return json({ ok: !!res, uid: sessionUid(), cookie: !!(ENV && ENV.JSESSIONID),
+                        source: res ? res.source : null, area: res ? res.area : null }, o);
         }
 
         default:

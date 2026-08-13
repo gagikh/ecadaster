@@ -124,6 +124,7 @@
     <legend data-i18n="legMeas">Measurements (plotted parcels)</legend>
     <label class="chk"><input type="checkbox" id="show-area" checked> <span data-i18n="showArea">Show area (m² / ha)</span></label>
     <label class="chk"><input type="checkbox" id="show-len"> <span data-i18n="showLen">Show edge lengths (m)</span></label>
+    <label class="chk"><input type="checkbox" id="do-trace" checked> <span data-i18n="doTrace">Trace boundary from cadastre map</span></label>
   </fieldset>
 
   <p class="hint" data-i18n-html="hint"></p>
@@ -149,7 +150,7 @@ const I18N = {
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ (գծված հողամասեր)",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
     opacity:"Լցման/շերտի թափանցիկություն",
-    showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)",
+    showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)", doTrace:"Եզրագիծը վերծանել կադաստրի քարտեզից",
     hint:`Մուտքագրեք կադաստրային ծածկագրերը և սեղմեք <b>Գծել բոլորը</b> — յուրաքանչյուր հողամաս ստանում է իր գույնը՝ պաշտոնական մակերեսով և ընտրովի եզրերի երկարություններով։ Սեղմեք հողամասին՝ մանրամասների համար։ Տվյալները՝ ՀՀ կադաստրի կոմիտեից։`,
     panelToggle:"Ցույց տալ/թաքցնել վահանակը", locateTitle:"Ցույց տալ իմ տեղը",
     locating:"Որոնում…", locAcc:r=>`Տեղորոշում ±${r} մ`,
@@ -161,7 +162,7 @@ const I18N = {
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
     rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։",
-    notFound:"չի գտնվել", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
+    notFound:"չի գտնվել", pointOnly:"միայն կենտրոն կետ (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
   },
   en: {
     title:"Armenia Cadastre × OpenStreetMap",
@@ -174,7 +175,7 @@ const I18N = {
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements (plotted parcels)",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
     opacity:"Parcel fill / overlay opacity",
-    showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)",
+    showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)", doTrace:"Trace boundary from cadastre map",
     hint:`Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with its official area and optional edge lengths. Click a parcel for details. Boundaries and layers come live from the State Cadastre Committee of Armenia.`,
     panelToggle:"Show/hide panel", locateTitle:"Show my location",
     locating:"Locating…", locAcc:r=>`Location ±${r} m`,
@@ -186,7 +187,7 @@ const I18N = {
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
     rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).",
-    notFound:"not found", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
+    notFound:"not found", pointOnly:"centre point only (cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
   },
   ru: {
     title:"Кадастр Армении × OpenStreetMap",
@@ -199,7 +200,7 @@ const I18N = {
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения (показанные участки)",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
     opacity:"Прозрачность заливки/слоя",
-    showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)",
+    showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)", doTrace:"Обвести границу по карте кадастра",
     hint:`Введите кадастровые коды и нажмите <b>Показать все</b> — каждый участок получает свой цвет, с официальной площадью и опциональными длинами сторон. Нажмите на участок для деталей. Данные — Комитет кадастра Армении.`,
     panelToggle:"Показать/скрыть панель", locateTitle:"Показать моё местоположение",
     locating:"Определение…", locAcc:r=>`Местоположение ±${r} м`,
@@ -211,7 +212,7 @@ const I18N = {
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
     rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).",
-    notFound:"не найдено", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
+    notFound:"не найдено", pointOnly:"только центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
   },
 };
 let LANG = "hy";
@@ -332,7 +333,7 @@ const opacityVal = () => document.getElementById("opacity").value / 100;
 function applyOpacity() {
   const o = opacityVal();
   Object.values(overlays).forEach(l => l.setOpacity(o));           // rasters (when logged in)
-  plotted.forEach(p => p.layer && p.layer.setStyle({ fillOpacity:o })); // colored parcels
+  plotted.forEach(p => p.layer && p.isPoly && p.layer.setStyle({ fillOpacity:o }));
   syncURL();
 }
 document.getElementById("opacity").oninput = applyOpacity;
@@ -392,9 +393,10 @@ function clearAll() {
 
 function popupHtml(p) {
   return `<b>${p.code}</b><br>
-    ${t("popupArea")}: ${fmtArea(p.area)}<br>
-    ${t("popupPerim")}: ${fmtLen(p.perim)}<br>
-    ${t("popupVerts")}: ${p.coords.length}` +
+    ${t("popupArea")}: ${fmtArea(p.area)}` +
+    (p.isPoly ? `<br>${t("popupPerim")}: ${fmtLen(p.perim)}<br>${t("popupVerts")}: ${p.coords.length}`
+              : `<br><i>${t("pointOnly")}</i>`) +
+    (p.traced ? `<br><i>${t("traced")}</i>` : "") +
     (p.updated ? `<br><span style="color:#666">${p.updated}</span>` : "");
 }
 
@@ -402,9 +404,9 @@ function renderMeasurements() {
   areaGroup.clearLayers(); lenGroup.clearLayers();
   const showArea = document.getElementById("show-area").checked;
   const showLen  = document.getElementById("show-len").checked;
-  plotted.filter(p => p.ok).forEach(p => {
+  plotted.filter(p => p.ok && p.isPoly).forEach(p => {
     if (showArea) {
-      const c = p.layer.getBounds().getCenter();
+      const c = p.layer.getBounds ? p.layer.getBounds().getCenter() : p.layer.getLatLng();
       L.marker(c, { interactive:false,
         icon:L.divIcon({ className:"mlabel", html:fmtArea(p.area), iconSize:null }) }).addTo(areaGroup);
     }
@@ -428,7 +430,8 @@ function renderLegend() {
   ).join("");
   document.querySelectorAll("#legend .swatch[data-i]").forEach(el => el.onclick = () => {
     const p = plotted[+el.dataset.i];
-    if (p && p.layer) { map.fitBounds(p.layer.getBounds(), { maxZoom:19 }); p.layer.openPopup(); }
+    if (p && p.layer) { const b = p.isPoly ? p.layer.getBounds() : L.latLngBounds([p.coords[0], p.coords[0]]).pad(0.002);
+      map.fitBounds(b, { maxZoom:18 }); p.layer.openPopup(); }
   });
 }
 
@@ -447,13 +450,24 @@ async function plotAll(skipFit = false) {
       if (!res) { plotted.push({ code, ok:false }); continue; }
       const coords = res.coords;
       const color = PALETTE[colorIdx++ % PALETTE.length];
-      const layer = L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal() }).addTo(map);
-      const p = { code, coords, layer, ok:true, color,
-                  area: (typeof res.area === "number" && res.area > 0) ? res.area : areaM2(coords),
-                  perim: perimeter(coords), official: typeof res.area === "number", updated: res.updated };
+      // The cadastre currently serves only a centre point for most parcels
+      // ("Parcel geometry service is disabled"), so fall back to a marker.
+      let isPoly = coords.length >= 3, traced = false;
+      if (!isPoly && document.getElementById("do-trace").checked) {
+        const t = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000);
+        if (t && t.length >= 3) { coords.length = 0; coords.push(...t); isPoly = true; traced = true; }
+      }
+      const layer = isPoly
+        ? L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal(),
+                              dashArray: traced ? "6 4" : null }).addTo(map)
+        : L.circleMarker(coords[0], { radius:8, color, weight:3,
+            fillColor:color, fillOpacity:0.9 }).addTo(map);
+      const p = { code, coords, layer, ok:true, color, isPoly, traced,
+                  area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
+                  perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
       layer.bindPopup(popupHtml(p));
       plotted.push(p);
-      allBounds.push(layer.getBounds());
+      allBounds.push(isPoly ? layer.getBounds() : L.latLngBounds([coords[0], coords[0]]).pad(0.002));
     } catch (err) {
       corsHit = true;
       plotted.push({ code, ok:false });
@@ -566,6 +580,101 @@ document.getElementById("lang").onchange = (e) => {
 restore();
 map.on("moveend", syncURL);
 window.addEventListener("popstate", restore);
+
+// ---- Derive a boundary from the official raster --------------------------
+// The cadastre disabled its vector geometry service, but the `parcels` WMS
+// layer still renders true boundaries. We fetch that image around the parcel's
+// official centre, flood-fill the enclosing cell and trace its outline, then
+// convert pixels back to lat/lng. Accuracy is ~1 pixel (≈0.2-0.5 m).
+const loadImg = (url) => new Promise((res, rej) => {
+  const i = new Image();
+  i.crossOrigin = "anonymous";
+  i.onload = () => res(i); i.onerror = rej;
+  i.src = url;
+});
+
+function simplify(pts, tol) {                     // Douglas-Peucker
+  if (pts.length < 3) return pts;
+  const d2 = (p, a, b) => {
+    const x = b[0]-a[0], y = b[1]-a[1];
+    const t = ((p[0]-a[0])*x + (p[1]-a[1])*y) / ((x*x+y*y) || 1);
+    const u = Math.max(0, Math.min(1, t));
+    const dx = a[0]+u*x-p[0], dy = a[1]+u*y-p[1];
+    return dx*dx + dy*dy;
+  };
+  const keep = new Array(pts.length).fill(false);
+  keep[0] = keep[pts.length-1] = true;
+  (function rec(i, j) {
+    let best = -1, bi = -1;
+    for (let k = i+1; k < j; k++) { const d = d2(pts[k], pts[i], pts[j]); if (d > best) { best = d; bi = k; } }
+    if (best > tol*tol) { keep[bi] = true; rec(i, bi); rec(bi, j); }
+  })(0, pts.length-1);
+  return pts.filter((_, i) => keep[i]);
+}
+
+async function traceBoundary(lat, lng, area) {
+  const px = 768;
+  for (const mult of [4, 8, 16]) {                // widen if the parcel overflows
+    const side = Math.max(60, mult * Math.sqrt(Math.max(area, 100)));
+    const dLat = (side/2) / 111320;
+    const dLng = (side/2) / (111320 * Math.cos(lat * Math.PI/180));
+    const bbox = [lng-dLng, lat-dLat, lng+dLng, lat+dLat];
+    const url = API + "/wms?" + new URLSearchParams({
+      service:"WMS", version:"1.1.1", request:"GetMap", layers:"parcels", styles:"",
+      format:"image/png", transparent:"true", srs:"EPSG:4326",
+      bbox: bbox.join(","), width:String(px), height:String(px) });
+    let img; try { img = await loadImg(url); } catch (e) { return null; }
+    const cv = document.createElement("canvas"); cv.width = cv.height = px;
+    const cx2 = cv.getContext("2d", { willReadFrequently:true });
+    cx2.drawImage(img, 0, 0);
+    let data; try { data = cx2.getImageData(0, 0, px, px).data; } catch (e) { return null; }
+
+    const solid = (i) => data[i*4+3] > 40;        // any drawn pixel = a boundary line
+    const mask = new Uint8Array(px*px);
+    const c0 = (px>>1)*px + (px>>1);
+    if (solid(c0)) { /* centre sits on a line; nudge handled by BFS below */ }
+    const q = [c0]; mask[c0] = 1;
+    let touchedEdge = false, count = 0;
+    while (q.length) {
+      const i = q.pop(); count++;
+      const x = i % px, y = (i / px) | 0;
+      if (x === 0 || y === 0 || x === px-1 || y === px-1) { touchedEdge = true; break; }
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const j = (y+dy)*px + (x+dx);
+        if (!mask[j] && !solid(j)) { mask[j] = 1; q.push(j); }
+      }
+    }
+    if (touchedEdge || count < 50) continue;      // leaked out — try a wider window
+
+    // Moore-neighbour contour trace
+    let sx = -1, sy = -1;
+    outer: for (let y = 0; y < px; y++) for (let x = 0; x < px; x++)
+      if (mask[y*px+x]) { sx = x; sy = y; break outer; }
+    if (sx < 0) continue;
+    const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+    const ring = []; let cx3 = sx, cy3 = sy, dir = 4, guard = 0;
+    do {
+      ring.push([cx3, cy3]);
+      let moved = false;
+      for (let k = 1; k <= 8; k++) {
+        const nd = (dir + k) % 8;
+        const nx = cx3 + dirs[nd][0], ny = cy3 + dirs[nd][1];
+        if (nx >= 0 && ny >= 0 && nx < px && ny < px && mask[ny*px+nx]) {
+          cx3 = nx; cy3 = ny; dir = (nd + 5) % 8; moved = true; break;
+        }
+      }
+      if (!moved) break;
+    } while ((cx3 !== sx || cy3 !== sy) && ++guard < 200000);
+    if (ring.length < 8) continue;
+
+    const simple = simplify(ring, 1.2);
+    return simple.map(([x, y]) => [
+      bbox[3] - (y / px) * (bbox[3] - bbox[1]),
+      bbox[0] + (x / px) * (bbox[2] - bbox[0]),
+    ]);
+  }
+  return null;
+}
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
 let meMarker = null, meCircle = null, watching = false, firstFix = false;
