@@ -1021,7 +1021,12 @@ function renderAuctions() {
     });
   }
   if (inView) rows = rows.filter(a => a.lat != null && b.contains([a.lat, a.lng]));
-  rows = rows.slice().sort((x, y) => String(x.endsAt).localeCompare(String(y.endsAt)));
+  // Sorted by cadastral code, so parcels in the same block sit together;
+  // lots that have no code go last, ordered by deadline.
+  rows = rows.slice().sort((x, y) =>
+    (y.code ? 1 : 0) - (x.code ? 1 : 0) ||
+    String(x.code || "").localeCompare(String(y.code || "")) ||
+    String(x.endsAt || "").localeCompare(String(y.endsAt || "")));
 
   list.innerHTML = rows.length ? "" : (AUCTIONS && AUCTIONS.length === 0 && !aStatusHasMsg() ? `<p class="hint">${t("aNone")}</p>` : "");
   for (const a of rows) {
