@@ -209,7 +209,10 @@ const I18N = {
     tabCodes:"Ծածկագրեր", tabAuctions:"Աճուրդներ",
     aAllRegions:"Բոլորը", aOpenOnly:"Միայն բաց աճուրդները",
     aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
-    aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
+    aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
+    aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի։", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
+    aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
+    aOrganizer:"Կազմակերպիչ", aEnds:"Ավարտ", aOpenLot:"Բացել աճուրդի էջը", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
     auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
@@ -239,7 +242,10 @@ const I18N = {
     tabCodes:"Cadastral codes", tabAuctions:"Auctions",
     aAllRegions:"All", aOpenOnly:"Open auctions only",
     aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
-    aLoading:"Loading…", daysShort:"d", aEndsSoon:"today", aSoon:"Auction list is not connected yet (server pending).",
+    aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
+    aNoCode:"This lot has no cadastral code.", aNoGeom:"Parcel not found in the cadastre.",
+    aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
+    aOrganizer:"Organizer", aEnds:"Ends", aOpenLot:"Open the lot page", aSoon:"Auction list is not connected yet (server pending).",
     auctionsSoon:"Open auctions with cadastral codes will be listed here.",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
@@ -269,7 +275,10 @@ const I18N = {
     tabCodes:"Кадастровые коды", tabAuctions:"Аукционы",
     aAllRegions:"Все", aOpenOnly:"Только открытые аукционы",
     aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
-    aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
+    aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
+    aNoCode:"У лота нет кадастрового кода.", aNoGeom:"Участок не найден в кадастре.",
+    aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
+    aOrganizer:"Организатор", aEnds:"Окончание", aOpenLot:"Открыть страницу лота", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
     auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
@@ -795,6 +804,7 @@ locBtn.setAttribute("role", "button");
 L.DomEvent.on(locBtn, "click", (e) => { L.DomEvent.stop(e); toggleLocate(locBtn); });
 
 // ---- Tabs ---------------------------------------------------------------
+let TAB = "codes";          // declared before showTab: restore() runs during init
 // Both map layers stay visible regardless of tab; only the panel content swaps.
 function showTab(name, push) {
   const isAuctions = name === "auctions";
@@ -809,7 +819,6 @@ function showTab(name, push) {
   if (isAuctions && !AUCTIONS) loadAuctions().then(renderAuctions);
   if (push) commit();
 }
-let TAB = "codes";
 for (const t of document.querySelectorAll(".tab"))
   t.onclick = () => showTab(t.dataset.pane === "pane-auctions" ? "auctions" : "codes", true);
 
@@ -998,16 +1007,63 @@ function renderAuctions() {
 }
 const aStatusHasMsg = () => !!document.getElementById("aStatus").textContent;
 
-function focusAuction(a) {
-  if (a.lat == null) return;
-  map.setView([a.lat, a.lng], 18);
+// Draw the auctioned parcel from its cadastral code — same pipeline as the
+// codes tab (/parcel, with boundary tracing), in the auction colour.
+const AUCTION_COLOR = "#f59e0b";
+const drawn = new Map();                       // code -> layer
+
+async function focusAuction(a) {
+  if (!a.code) { aStatus(t("aNoCode")); return; }
+
+  let layer = drawn.get(a.code);
+  if (!layer) {
+    aStatus(t("aLoading"));
+    try {
+      const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code)).then(r => r.json());
+      if (!res.success || !res.coords || !res.coords.length) throw new Error("no geometry");
+      let coords = res.coords, traced = false;
+      if (coords.length < 3 && document.getElementById("do-trace").checked) {
+        const tr = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000);
+        if (tr && tr.length >= 3) { coords = tr; traced = true; }
+      }
+      layer = coords.length >= 3
+        ? L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
+                              fillOpacity: opacityVal(), dashArray: traced ? "6 4" : null })
+        : L.circleMarker(coords[0], { radius: 9, color: AUCTION_COLOR, weight: 3,
+                              fillColor: AUCTION_COLOR, fillOpacity: 0.9 });
+      layer.bindPopup(auctionPopup(a, res));
+      layer.addTo(auctionLayer);
+      drawn.set(a.code, layer);
+      aStatus("");
+    } catch (e) { aStatus(t("aNoGeom")); return; }
+  }
+
+  const b = layer.getBounds ? layer.getBounds() : L.latLngBounds([layer.getLatLng(), layer.getLatLng()]).pad(0.002);
+  map.fitBounds(b, { maxZoom: 18, padding: [40, 40] });
+  layer.openPopup();
   if (isPhone()) sheet("peek");
+}
+
+function auctionPopup(a, parcel) {
+  const row = (k, v) => v == null || v === "" ? "" : `<tr><td>${k}</td><td>${v}</td></tr>`;
+  const d = daysLeft(a.endsAt);
+  return `<b>${a.title || ""}</b>
+    <div style="font-family:ui-monospace,monospace;color:#0b7">${a.code}</div>
+    <table style="margin-top:4px">
+      ${row(t("aPriceStart"), fmtPrice(a.priceStart))}
+      ${row(t("aValuation"), fmtPrice(a.valuation))}
+      ${row(t("aDeposit"), fmtPrice(a.deposit))}
+      ${row(t("aOrganizer"), a.organizer)}
+      ${row(t("aEnds"), a.endsAt + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : ""))}
+      ${row(t("popupArea"), parcel && parcel.area ? fmtArea(parcel.area) : null)}
+    </table>
+    <a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
 document.getElementById("aSearch").onclick = async () => { await loadAuctions(true); renderAuctions(); };
 document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
-  auctionLayer.clearLayers();
+  auctionLayer.clearLayers(); drawn.clear();
   renderAuctions();
 };
 for (const id of ["a-open", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
