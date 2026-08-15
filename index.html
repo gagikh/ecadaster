@@ -65,9 +65,14 @@
   .acard .go { flex:none; color:var(--acc); text-decoration:none; font-size:13px; padding:0 2px; }
   .acard .go:hover { text-decoration:underline; }
   /* a click starts a cadastre lookup that can take a few seconds */
-  .acard.busy { position:relative; opacity:.65; }
-  .acard.busy::after { content:""; position:absolute; top:8px; right:8px;
-    width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--acc);
+  .acard { position:relative; }
+  .acard.sel { border-color:var(--acc); box-shadow:inset 3px 0 0 var(--acc); }
+  .acard.busy { opacity:.6; }
+  .acard.busy::before { content:""; position:absolute; inset:0; border-radius:8px;
+    background:rgba(15,23,42,.45); }
+  .acard.busy::after { content:""; position:absolute; top:50%; left:50%;
+    width:18px; height:18px; margin:-9px 0 0 -9px;
+    border:2px solid var(--line); border-top-color:var(--acc);
     border-radius:50%; animation:aspin .7s linear infinite; }
   @keyframes aspin { to { transform:rotate(360deg); } }
   .grip { display:none; }
@@ -1038,8 +1043,12 @@ const drawn = new Map();                       // code -> layer
 // parcel up — the cadastre round-trip plus tracing takes a few seconds.
 async function pickAuction(a, el) {
   if (el.classList.contains("busy")) return;
-  el.classList.add("busy");
-  try { await focusAuction(a); } finally { el.classList.remove("busy"); }
+  for (const c of document.querySelectorAll(".acard.sel")) c.classList.remove("sel");
+  el.classList.add("sel", "busy");
+  aStatus(t("aLoading"));
+  // Hold the spinner briefly even on a cache hit, so the click is never silent.
+  const shown = new Promise(r => setTimeout(r, 400));
+  try { await focusAuction(a); } finally { await shown; el.classList.remove("busy"); }
 }
 
 async function focusAuction(a) {
