@@ -58,7 +58,7 @@
   .acard .t { font-size:12px; line-height:1.35; }
   .acard .c { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--acc); margin-top:3px; }
   .acard .m { display:flex; gap:10px; font-size:11px; color:var(--mut); margin-top:4px; }
-  .acard.soon { border-color:#f87171; }
+  .acard .m .soon { color:#f87171; font-weight:600; }   /* ends within 2 days */
   .grip { display:none; }
   @media (max-width: 640px) {
     /* Panel becomes a bottom sheet: map stays usable, list within thumb reach. */
@@ -207,9 +207,9 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
     tabCodes:"Ծածկագրեր", tabAuctions:"Աճուրդներ",
-    aAllRegions:"Ամբողջ Հայաստանը", aOpenOnly:"Միայն բաց աճուրդները",
+    aAllRegions:"Բոլորը", aOpenOnly:"Միայն բաց աճուրդները",
     aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
-    aLoading:"Բեռնվում է…", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
+    aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
     auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
@@ -237,9 +237,9 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Plot all", share:"Share", clear:"Clear",
     tabCodes:"Cadastral codes", tabAuctions:"Auctions",
-    aAllRegions:"All Armenia", aOpenOnly:"Open auctions only",
+    aAllRegions:"All", aOpenOnly:"Open auctions only",
     aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
-    aLoading:"Loading…", aSoon:"Auction list is not connected yet (server pending).",
+    aLoading:"Loading…", daysShort:"d", aEndsSoon:"today", aSoon:"Auction list is not connected yet (server pending).",
     auctionsSoon:"Open auctions with cadastral codes will be listed here.",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
@@ -267,9 +267,9 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
     tabCodes:"Кадастровые коды", tabAuctions:"Аукционы",
-    aAllRegions:"Вся Армения", aOpenOnly:"Только открытые аукционы",
+    aAllRegions:"Все", aOpenOnly:"Только открытые аукционы",
     aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
-    aLoading:"Загрузка…", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
+    aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
     auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
@@ -304,6 +304,12 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
   const lb = document.querySelector(".locate-btn"); if (lb) lb.title = t("locateTitle");
   const ls = document.getElementById("lang"); if (ls) ls.value = LANG;
+  for (const g of document.querySelectorAll("#a-region optgroup[data-hy]"))
+    g.label = place(g.dataset.hy);
+  for (const o of document.querySelectorAll("#a-region option[data-marz]"))
+    o.textContent = place(o.dataset.marz) + " — " + t("aAllRegions");
+  for (const o of document.querySelectorAll("#a-region option[data-hy]"))
+    o.textContent = place(o.dataset.hy);
   // the cadastre publishes labels per language: parcels_label_am/en/ru
   if (typeof overlays !== "undefined" && overlays.plabels) {
     overlays.plabels.setParams({ layers: "parcels_label_" + (LANG === "hy" ? "am" : LANG) });
@@ -809,6 +815,89 @@ for (const t of document.querySelectorAll(".tab"))
 
 // ---- Auctions tab -------------------------------------------------------
 // Marz -> communities, as published by e-auctions.am (Տարածաշրջան filter).
+const PLACE = {
+  "Արագածոտն":["Aragatsotn","Арагацотн"],
+  "Ալագյազ":["Alagyaz","Алагяз"],
+  "Աշտարակ":["Ashtarak","Аштарак"],
+  "Ապարան":["Aparan","Апаран"],
+  "Արևուտ":["Arevut","Аревут"],
+  "Թալին":["Talin","Талин"],
+  "Ծաղկահովիտ":["Tsaghkahovit","Цахкаовит"],
+  "Մեծաձոր":["Metsadzor","Мецадзор"],
+  "Շամիրամ":["Shamiram","Шамирам"],
+  "Արարատ":["Ararat","Арарат"],
+  "Արտաշատ":["Artashat","Арташат"],
+  "Մասիս":["Masis","Масис"],
+  "Վեդի":["Vedi","Веди"],
+  "Վերին Դվին":["Verin Dvin","Верин Двин"],
+  "Արմավիր":["Armavir","Армавир"],
+  "Արաքս":["Araks","Аракс"],
+  "Բաղրամյան":["Baghramyan","Баграмян"],
+  "Մեծամոր":["Metsamor","Мецамор"],
+  "Վաղարշապատ":["Vagharshapat","Вагаршапат"],
+  "Փարաքար":["Parakar","Паракар"],
+  "Ֆերիկ":["Ferik","Ферик"],
+  "Գեղարքունիք":["Gegharkunik","Гегаркуник"],
+  "Գավառ":["Gavar","Гавар"],
+  "Ճամբարակ":["Chambarak","Чамбарак"],
+  "Մարտունի":["Martuni","Мартуни"],
+  "Սևան":["Sevan","Севан"],
+  "Վարդենիս":["Vardenis","Варденис"],
+  "Լոռի":["Lori","Лори"],
+  "Ալավերդի":["Alaverdi","Алаверди"],
+  "Գյուլագարակ":["Gyulagarak","Гюлагарак"],
+  "Թումանյան":["Tumanyan","Туманян"],
+  "Լերմոնտովո":["Lermontovo","Лермонтово"],
+  "Լոռի Բերդ":["Lori Berd","Лори Берд"],
+  "Սպիտակ":["Spitak","Спитак"],
+  "Ստեփանավան":["Stepanavan","Степанаван"],
+  "Վանաձոր":["Vanadzor","Ванадзор"],
+  "Տաշիր":["Tashir","Ташир"],
+  "Փամբակ":["Pambak","Памбак"],
+  "Ֆիոլետովո":["Fioletovo","Фиолетово"],
+  "Կոտայք":["Kotayk","Котайк"],
+  "Աբովյան":["Abovyan","Абовян"],
+  "Ակունք":["Akunk","Акунк"],
+  "Արզնի":["Arzni","Арзни"],
+  "Բյուրեղավան":["Byureghavan","Бюрегаван"],
+  "Գառնի":["Garni","Гарни"],
+  "Ծաղկաձոր":["Tsaghkadzor","Цахкадзор"],
+  "Հրազդան":["Hrazdan","Раздан"],
+  "Նաիրի":["Nairi","Наири"],
+  "Նոր Հաճըն":["Nor Hachn","Нор Ачн"],
+  "Չարենցավան":["Charentsavan","Чаренцаван"],
+  "Ջրվեժ":["Jrvezh","Джрвеж"],
+  "Շիրակ":["Shirak","Ширак"],
+  "Ախուրյան":["Akhuryan","Ахурян"],
+  "Ամասիա":["Amasia","Амасия"],
+  "Անի":["Ani","Ани"],
+  "Աշոցք":["Ashotsk","Ашоцк"],
+  "Արթիկ":["Artik","Артик"],
+  "Գյումրի":["Gyumri","Гюмри"],
+  "Սյունիք":["Syunik","Сюник"],
+  "Գորիս":["Goris","Горис"],
+  "Կապան":["Kapan","Капан"],
+  "Մեղրի":["Meghri","Мегри"],
+  "Սիսիան":["Sisian","Сисиан"],
+  "Տաթև":["Tatev","Татев"],
+  "Տեղ":["Tegh","Тег"],
+  "Քաջարան":["Kajaran","Каджаран"],
+  "Վայոց ձոր":["Vayots Dzor","Вайоц Дзор"],
+  "Արենի":["Areni","Арени"],
+  "Եղեգիս":["Yeghegis","Егегис"],
+  "Եղեգնաձոր":["Yeghegnadzor","Егегнадзор"],
+  "Ջերմուկ":["Jermuk","Джермук"],
+  "Վայք":["Vayk","Вайк"],
+  "Տավուշ":["Tavush","Тавуш"],
+  "Բերդ":["Berd","Берд"],
+  "Դիլիջան":["Dilijan","Дилижан"],
+  "Իջևան":["Ijevan","Иджеван"],
+  "Նոյեմբերյան":["Noyemberyan","Ноемберян"],
+  "Երևան":["Yerevan","Ереван"],
+};
+// Armenian is the source of truth (it matches the auction data); EN/RU are labels.
+const place = (hy) => LANG === "hy" ? hy : ((PLACE[hy] || [])[LANG === "en" ? 0 : 1] || hy);
+
 const MARZ = {
   "Արագածոտն": ["Ալագյազ","Աշտարակ","Ապարան","Արևուտ","Թալին","Ծաղկահովիտ","Մեծաձոր","Շամիրամ"],
   "Արարատ":    ["Արարատ","Արտաշատ","Մասիս","Վեդի","Վերին Դվին"],
@@ -826,17 +915,18 @@ const MARZ = {
 (function buildRegionSelect() {
   const sel = document.getElementById("a-region");
   const all = document.createElement("option");
-  all.value = ""; all.dataset.i18n = "aAllRegions"; all.textContent = "All Armenia";
+  all.value = ""; all.dataset.i18n = "aAllRegions"; all.textContent = "All";
   sel.appendChild(all);
   for (const [marz, list] of Object.entries(MARZ)) {
     const g = document.createElement("optgroup");
-    g.label = marz;
+    g.dataset.hy = marz; g.label = place(marz);
     const whole = document.createElement("option");
-    whole.value = "marz:" + marz; whole.textContent = marz + " — բոլորը";
+    whole.value = "marz:" + marz; whole.dataset.marz = marz;
+    whole.textContent = place(marz) + " — " + t("aAllRegions");
     g.appendChild(whole);
     for (const c of list) {
       const o = document.createElement("option");
-      o.value = c; o.textContent = c;
+      o.value = c; o.dataset.hy = c; o.textContent = place(c);
       g.appendChild(o);
     }
     sel.appendChild(g);
@@ -895,11 +985,12 @@ function renderAuctions() {
   for (const a of rows) {
     const d = daysLeft(a.endsAt);
     const el = document.createElement("div");
-    el.className = "acard" + (d != null && d <= 2 ? " soon" : "");
+    el.className = "acard";
     el.innerHTML = `<div class="t">${a.title || ""}</div>` +
       (a.code ? `<div class="c">${a.code}</div>` : "") +
       `<div class="m"><span>${fmtPrice(a.priceStart)}</span>` +
-      (d != null ? `<span>${d} ${t("daysShort") || "d"}</span>` : "") +
+      (d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
+          d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>` : "") +
       `<span style="margin-left:auto">${a.organizer || ""}</span></div>`;
     el.onclick = () => focusAuction(a);
     list.appendChild(el);
