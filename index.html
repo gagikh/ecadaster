@@ -2,6 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
+<meta name="build" content="2026-08-15-2350">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -231,7 +232,7 @@ const I18N = {
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
     aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
     aCode:"Կադաստրային ծածկագիր", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
-    aOrganizer:"Կազմակերպիչ", aEnds:"Ավարտ", aOpenLot:"Բացել աճուրդի էջը", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
+    aOrganizer:"Կազմակերպիչ", aStarts:"Մեկնարկ", aEnds:"Ավարտ", aOpenLot:"Բացել աճուրդի էջը", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
     auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
@@ -264,7 +265,7 @@ const I18N = {
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
     aNoCode:"No cadastral code — opening the lot page.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
     aCode:"Cadastral code", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
-    aOrganizer:"Organizer", aEnds:"Ends", aOpenLot:"Open the lot page", aSoon:"Auction list is not connected yet (server pending).",
+    aOrganizer:"Organizer", aStarts:"Starts", aEnds:"Ends", aOpenLot:"Open the lot page", aSoon:"Auction list is not connected yet (server pending).",
     auctionsSoon:"Open auctions with cadastral codes will be listed here.",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
@@ -297,7 +298,7 @@ const I18N = {
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
     aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
     aCode:"Кадастровый код", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
-    aOrganizer:"Организатор", aEnds:"Окончание", aOpenLot:"Открыть страницу лота", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
+    aOrganizer:"Организатор", aStarts:"Начало", aEnds:"Окончание", aOpenLot:"Открыть страницу лота", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
     auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
@@ -1022,11 +1023,15 @@ function renderAuctions() {
   }
   if (inView) rows = rows.filter(a => a.lat != null && b.contains([a.lat, a.lng]));
   // Sorted by cadastral code, so parcels in the same block sit together;
-  // lots that have no code go last, ordered by deadline.
-  rows = rows.slice().sort((x, y) =>
-    (y.code ? 1 : 0) - (x.code ? 1 : 0) ||
-    String(x.code || "").localeCompare(String(y.code || "")) ||
-    String(x.endsAt || "").localeCompare(String(y.endsAt || "")));
+  // lots without a code go last, ordered by deadline. Compare the digits
+  // only — localeCompare treats "-" as ignorable punctuation in some locales.
+  const codeKey = (c) => String(c || "").replace(/\D+/g, "");
+  rows = rows.slice().sort((x, y) => {
+    const a = codeKey(x.code), b = codeKey(y.code);
+    if (!a !== !b) return a ? -1 : 1;
+    if (a !== b) return a < b ? -1 : 1;
+    return String(x.endsAt || "").localeCompare(String(y.endsAt || ""));
+  });
 
   list.innerHTML = rows.length ? "" : (AUCTIONS && AUCTIONS.length === 0 && !aStatusHasMsg() ? `<p class="hint">${t("aNone")}</p>` : "");
   for (const a of rows) {
@@ -1040,7 +1045,9 @@ function renderAuctions() {
       amount(t("aPriceStart"), a.priceStart, "start") +
       amount(t("aDeposit"), a.deposit) +
       (d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
-          d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>` : "") +
+          d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>`
+        : a.startsAt ? `<span><span class="lbl">${t("aStarts")}</span> ${
+            String(a.startsAt).slice(0, 16)}</span>` : "") +
       `<span class="who">${org(a.organizer)}</span>` +
       `<a class="go" href="${a.url}" target="_blank" rel="noopener" title="${t("aOpenLot")}">↗</a></div>`;
     el.onclick = (ev) => { if (!ev.target.closest("a")) pickAuction(a, el); };
@@ -1112,6 +1119,7 @@ function auctionPopup(a, parcel) {
       ${row(t("aValuation"), fmtPrice(a.valuation))}
       ${row(t("aDeposit"), fmtPrice(a.deposit))}
       ${row(t("aOrganizer"), org(a.organizer))}
+      ${row(t("aStarts"), a.startsAt)}
       ${row(t("aEnds"), a.endsAt ? a.endsAt + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : "") : null)}
       ${row(t("popupArea"), parcel && parcel.area ? fmtArea(parcel.area) : null)}
     </table>
@@ -1208,6 +1216,7 @@ map.on("locationerror", (e) => {
 // call showTab(), which touches TAB / AUCTIONS / drawn.
 async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
 async function boot() {
+  console.info("ecadaster build 2026-08-15-2350");
   try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; }
   catch (e) { LANG = "hy"; }
   applyI18n();
