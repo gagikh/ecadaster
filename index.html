@@ -59,7 +59,10 @@
   .acard .c { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--acc); margin-top:3px; }
   .acard .c.nc { font-family:inherit; color:var(--mut); font-style:italic; }
   .acard.nocode { opacity:.72; }
-  .acard .m { display:flex; gap:10px; font-size:11px; color:var(--mut); margin-top:4px; }
+  .acard .m { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--mut); margin-top:4px; }
+  .acard .m .lbl { opacity:.7; }
+  .acard .m .amt { color:var(--txt); }
+  .acard .m .amt.start { font-weight:600; }
   .acard .m .soon { color:#f87171; font-weight:600; }   /* ends within 2 days */
   .acard .m .who { margin-left:auto; }
   .acard .go { flex:none; color:var(--acc); text-decoration:none; font-size:13px; padding:0 2px; }
@@ -994,6 +997,11 @@ async function loadAuctions(force) {
   return AUCTIONS;
 }
 
+// "<label> 5,100,000֏" — the list has to show the starting price and the
+// deposit side by side, since a lot may have only one of them stored.
+const amount = (label, v, cls = "") => v == null ? "" :
+  `<span><span class="lbl">${label}</span> <span class="amt ${cls}">${fmtPrice(v)}</span></span>`;
+
 function renderAuctions() {
   const list = document.getElementById("aList");
   const region = document.getElementById("a-region").value;
@@ -1023,7 +1031,9 @@ function renderAuctions() {
     el.innerHTML = `<div class="t">${a.title || ""}</div>` +
       (a.code ? `<div class="c">${a.code}</div>`
               : `<div class="c nc">${t("aNoCodeTag")}</div>`) +
-      `<div class="m"><span>${fmtPrice(a.priceStart)}</span>` +
+      `<div class="m">` +
+      amount(t("aPriceStart"), a.priceStart, "start") +
+      amount(t("aDeposit"), a.deposit) +
       (d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
           d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>` : "") +
       `<span class="who">${org(a.organizer)}</span>` +
