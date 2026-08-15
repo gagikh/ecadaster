@@ -50,7 +50,15 @@
     color:var(--mut); font-size:13px; cursor:pointer; border-radius:0; font-weight:500; }
   .tab.active { color:var(--acc); border-bottom-color:var(--acc); }
   .tab:hover:not(.active) { color:var(--txt); }
+  .pane { min-height:268px; }          /* codes textarea + buttons ≈ auctions search + list */
   .pane[hidden] { display:none; }
+  .alist { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  .acard { border:1px solid var(--line); border-radius:8px; padding:8px; cursor:pointer; }
+  .acard:hover { border-color:var(--acc); }
+  .acard .t { font-size:12px; line-height:1.35; }
+  .acard .c { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--acc); margin-top:3px; }
+  .acard .m { display:flex; gap:10px; font-size:11px; color:var(--mut); margin-top:4px; }
+  .acard.soon { border-color:#f87171; }
   .grip { display:none; }
   @media (max-width: 640px) {
     /* Panel becomes a bottom sheet: map stays usable, list within thumb reach. */
@@ -122,8 +130,17 @@
   </div><!-- /pane-codes -->
 
   <div class="pane" id="pane-auctions" role="tabpanel" hidden>
-    <p class="sub" data-i18n="auctionsSoon" style="margin:6px 0 0">
-      Open auctions with cadastral codes will be listed here.</p>
+    <select id="a-region"></select>
+    <label class="chk" style="margin-top:6px"><input type="checkbox" id="a-open" checked>
+      <span data-i18n="aOpenOnly">Open auctions only</span></label>
+    <label class="chk"><input type="checkbox" id="a-view">
+      <span data-i18n="aInView">In current map view</span></label>
+    <div class="row" style="margin-top:8px">
+      <button id="aSearch" style="flex:1" data-i18n="aSearch">Search</button>
+      <button id="aClear" style="background:#374151;color:#e5e7eb" data-i18n="clear">Clear</button>
+    </div>
+    <div id="aStatus" class="status"></div>
+    <div id="aList" class="alist"></div>
   </div>
 
   <fieldset>
@@ -190,6 +207,9 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
     tabCodes:"Ծածկագրեր", tabAuctions:"Աճուրդներ",
+    aAllRegions:"Ամբողջ Հայաստանը", aOpenOnly:"Միայն բաց աճուրդները",
+    aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
+    aLoading:"Բեռնվում է…", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
     auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
@@ -217,6 +237,9 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Plot all", share:"Share", clear:"Clear",
     tabCodes:"Cadastral codes", tabAuctions:"Auctions",
+    aAllRegions:"All Armenia", aOpenOnly:"Open auctions only",
+    aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
+    aLoading:"Loading…", aSoon:"Auction list is not connected yet (server pending).",
     auctionsSoon:"Open auctions with cadastral codes will be listed here.",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
@@ -244,6 +267,9 @@ const I18N = {
 01-001-0658-0021`,
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
     tabCodes:"Кадастровые коды", tabAuctions:"Аукционы",
+    aAllRegions:"Вся Армения", aOpenOnly:"Только открытые аукционы",
+    aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
+    aLoading:"Загрузка…", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
     auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
@@ -774,11 +800,126 @@ function showTab(name, push) {
     t.setAttribute("aria-selected", on ? "true" : "false");
   }
   TAB = isAuctions ? "auctions" : "codes";
+  if (isAuctions && !AUCTIONS) loadAuctions().then(renderAuctions);
   if (push) commit();
 }
 let TAB = "codes";
 for (const t of document.querySelectorAll(".tab"))
   t.onclick = () => showTab(t.dataset.pane === "pane-auctions" ? "auctions" : "codes", true);
+
+// ---- Auctions tab -------------------------------------------------------
+// Marz -> communities, as published by e-auctions.am (Տարածաշրջան filter).
+const MARZ = {
+  "Արագածոտն": ["Ալագյազ","Աշտարակ","Ապարան","Արևուտ","Թալին","Ծաղկահովիտ","Մեծաձոր","Շամիրամ"],
+  "Արարատ":    ["Արարատ","Արտաշատ","Մասիս","Վեդի","Վերին Դվին"],
+  "Արմավիր":   ["Արաքս","Արմավիր","Բաղրամյան","Մեծամոր","Վաղարշապատ","Փարաքար","Ֆերիկ"],
+  "Գեղարքունիք":["Գավառ","Ճամբարակ","Մարտունի","Սևան","Վարդենիս"],
+  "Լոռի":      ["Ալավերդի","Գյուլագարակ","Թումանյան","Լերմոնտովո","Լոռի Բերդ","Սպիտակ","Ստեփանավան","Վանաձոր","Տաշիր","Փամբակ","Ֆիոլետովո"],
+  "Կոտայք":    ["Աբովյան","Ակունք","Արզնի","Բյուրեղավան","Գառնի","Ծաղկաձոր","Հրազդան","Նաիրի","Նոր Հաճըն","Չարենցավան","Ջրվեժ"],
+  "Շիրակ":     ["Ախուրյան","Ամասիա","Անի","Աշոցք","Արթիկ","Գյումրի"],
+  "Սյունիք":   ["Գորիս","Կապան","Մեղրի","Սիսիան","Տաթև","Տեղ","Քաջարան"],
+  "Վայոց ձոր": ["Արենի","Եղեգիս","Եղեգնաձոր","Ջերմուկ","Վայք"],
+  "Տավուշ":    ["Բերդ","Դիլիջան","Իջևան","Նոյեմբերյան"],
+  "Երևան":     ["Երևան"],
+};
+
+(function buildRegionSelect() {
+  const sel = document.getElementById("a-region");
+  const all = document.createElement("option");
+  all.value = ""; all.dataset.i18n = "aAllRegions"; all.textContent = "All Armenia";
+  sel.appendChild(all);
+  for (const [marz, list] of Object.entries(MARZ)) {
+    const g = document.createElement("optgroup");
+    g.label = marz;
+    const whole = document.createElement("option");
+    whole.value = "marz:" + marz; whole.textContent = marz + " — բոլորը";
+    g.appendChild(whole);
+    for (const c of list) {
+      const o = document.createElement("option");
+      o.value = c; o.textContent = c;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+})();
+
+// Data comes from the Worker (/auctions, backed by D1). Until that endpoint is
+// live the tab degrades to a clear message instead of an error.
+const auctionLayer = L.layerGroup().addTo(map);      // its own layer: codes stay visible
+let AUCTIONS = null;                                  // cached for the session
+
+const aStatus = (m) => document.getElementById("aStatus").textContent = m || "";
+const fmtPrice = (n) => n == null ? "" : n.toLocaleString("hy-AM") + "֏";
+const daysLeft = (iso) => {
+  const t = Date.parse((iso || "").replace(" ", "T"));
+  return Number.isFinite(t) ? Math.ceil((t - Date.now()) / 86400000) : null;
+};
+
+async function loadAuctions(force) {
+  if (AUCTIONS && !force) return AUCTIONS;
+  aStatus(t("aLoading"));
+  try {
+    const r = await fetch(API + "/auctions?open=1");
+    if (!r.ok) throw new Error(String(r.status));
+    AUCTIONS = await r.json();
+    aStatus("");
+  } catch (e) {
+    AUCTIONS = [];
+    aStatus(t("aSoon"));                              // endpoint not deployed yet
+  }
+  return AUCTIONS;
+}
+
+function renderAuctions() {
+  const list = document.getElementById("aList");
+  const region = document.getElementById("a-region").value;
+  const openOnly = document.getElementById("a-open").checked;
+  const inView = document.getElementById("a-view").checked;
+  const b = map.getBounds();
+
+  let rows = AUCTIONS || [];
+  if (openOnly) rows = rows.filter(a => !a.endsAt || Date.parse((a.endsAt || "").replace(" ", "T")) > Date.now());
+  if (region) {
+    const wanted = region.startsWith("marz:")
+      ? [region.slice(5), ...(MARZ[region.slice(5)] || [])]
+      : [region];
+    rows = rows.filter(a => {
+      const hay = `${a.organizer || ""} ${a.region || ""} ${a.title || ""}`;
+      return wanted.some(w => hay.includes(w));
+    });
+  }
+  if (inView) rows = rows.filter(a => a.lat != null && b.contains([a.lat, a.lng]));
+  rows = rows.slice().sort((x, y) => String(x.endsAt).localeCompare(String(y.endsAt)));
+
+  list.innerHTML = rows.length ? "" : (AUCTIONS && AUCTIONS.length === 0 && !aStatusHasMsg() ? `<p class="hint">${t("aNone")}</p>` : "");
+  for (const a of rows) {
+    const d = daysLeft(a.endsAt);
+    const el = document.createElement("div");
+    el.className = "acard" + (d != null && d <= 2 ? " soon" : "");
+    el.innerHTML = `<div class="t">${a.title || ""}</div>` +
+      (a.code ? `<div class="c">${a.code}</div>` : "") +
+      `<div class="m"><span>${fmtPrice(a.priceStart)}</span>` +
+      (d != null ? `<span>${d} ${t("daysShort") || "d"}</span>` : "") +
+      `<span style="margin-left:auto">${a.organizer || ""}</span></div>`;
+    el.onclick = () => focusAuction(a);
+    list.appendChild(el);
+  }
+}
+const aStatusHasMsg = () => !!document.getElementById("aStatus").textContent;
+
+function focusAuction(a) {
+  if (a.lat == null) return;
+  map.setView([a.lat, a.lng], 18);
+  if (isPhone()) sheet("peek");
+}
+
+document.getElementById("aSearch").onclick = async () => { await loadAuctions(true); renderAuctions(); };
+document.getElementById("aClear").onclick = () => {
+  document.getElementById("a-region").value = "";
+  auctionLayer.clearLayers();
+  renderAuctions();
+};
+for (const id of ["a-open", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
 
 // ---- Panel: side panel on desktop, bottom sheet on phones ---------------
 const panelEl = document.getElementById("panel");
