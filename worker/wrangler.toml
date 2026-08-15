@@ -1,7 +1,0 @@
-name = "cadastre-worker"
-main = "cadastre-worker.js"
-compatibility_date = "2024-11-01"
-
-# Set after we confirm it via /describe:
-# [vars]
-# CODE_FIELD = "cad_code"

@@ -1,5 +1,6 @@
 _check.js
 __pycache__/
 *.pyc
-worker/.wrangler/
 node_modules/
+# Worker + parser stay local (deployed with wrangler, never pushed)
+worker/

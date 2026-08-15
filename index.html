@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Armenia Cadastre over OpenStreetMap</title>
+<title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -45,6 +45,31 @@
   .leaflet-popup-content td { padding:2px 6px; border-bottom:1px solid #eee; vertical-align:top; }
   .leaflet-popup-content td:first-child { color:#555; font-weight:600; }
   a { color:var(--acc); }
+  .tabs { display:flex; gap:4px; margin:10px 0 8px; border-bottom:1px solid var(--line); }
+  .tab { flex:1; padding:8px 6px; background:none; border:0; border-bottom:2px solid transparent;
+    color:var(--mut); font-size:13px; cursor:pointer; border-radius:0; font-weight:500; }
+  .tab.active { color:var(--acc); border-bottom-color:var(--acc); }
+  .tab:hover:not(.active) { color:var(--txt); }
+  .pane[hidden] { display:none; }
+  .grip { display:none; }
+  @media (max-width: 640px) {
+    /* Panel becomes a bottom sheet: map stays usable, list within thumb reach. */
+    .panel { left:0; right:0; bottom:0; top:auto; width:auto; max-height:none;
+      border-radius:14px 14px 0 0; border-width:1px 0 0; padding:0;
+      transition:height .22s ease; height:76px; overflow:hidden; display:flex; flex-direction:column; }
+    .panel.half { height:45vh; }
+    .panel.full { height:90vh; }
+    .grip { display:block; flex:none; padding:7px 0 3px; cursor:grab; }
+    .grip i { display:block; width:34px; height:4px; margin:0 auto;
+      background:var(--line); border-radius:2px; }
+    #panelBody { flex:1; overflow-y:auto; padding:0 12px 14px;
+      -webkit-overflow-scrolling:touch; }
+    .panel:not(.half):not(.full) #panelBody > *:not(.tabs) { display:none; }
+    .panel .tabs { position:sticky; top:0; background:var(--panel); z-index:2; margin-top:0; }
+    .tab { padding:12px 6px; font-size:14px; }         /* ≥44px touch target */
+    .panel-toggle { display:none; }
+    .leaflet-bottom { bottom:82px; }                    /* keep controls clear */
+  }
   .locate-btn { color:#111; font-size:18px; text-align:center; }
   .locate-btn.active { color:#2563eb; }
   .panel-toggle { position:absolute; top:8px; right:8px; z-index:2; width:32px; height:32px;
@@ -61,6 +86,7 @@
 
 <div class="panel" id="panel">
   <button id="panelToggle" class="panel-toggle" data-i18n-title="panelToggle" title="Show/hide panel">☰</button>
+  <div class="grip" id="grip" aria-hidden="true"><i></i></div>
   <div id="panelBody">
   <div class="row" style="justify-content:flex-end;margin-bottom:6px">
     <select id="lang" style="width:auto">
@@ -69,8 +95,17 @@
       <option value="ru">РУ</option>
     </select>
   </div>
-  <h1 data-i18n="title">Armenia Cadastre × OpenStreetMap</h1>
-  <p class="sub" data-i18n="sub">Official e-cadastre GeoServer layers overlaid on OSM.</p>
+  <h1 data-i18n="title">Armenia cadastre map</h1>
+  <p class="sub" data-i18n="sub">Official cadastre data over the basemap of your choice.</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" id="tab-codes" role="tab" aria-selected="true"
+            data-pane="pane-codes" data-i18n="tabCodes">Cadastral codes</button>
+    <button class="tab" id="tab-auctions" role="tab" aria-selected="false"
+            data-pane="pane-auctions" data-i18n="tabAuctions">Auctions</button>
+  </div>
+
+  <div class="pane" id="pane-codes" role="tabpanel">
 
   <textarea id="codes" rows="7" data-i18n-ph="codesPh" placeholder="One code per line, e.g.
 01-001-0658-0020
@@ -83,6 +118,13 @@
   </div>
   <div id="status" class="status"></div>
   <div id="legend"></div>
+
+  </div><!-- /pane-codes -->
+
+  <div class="pane" id="pane-auctions" role="tabpanel" hidden>
+    <p class="sub" data-i18n="auctionsSoon" style="margin:6px 0 0">
+      Open auctions with cadastral codes will be listed here.</p>
+  </div>
 
   <fieldset>
     <legend data-i18n="legBasemap">Basemap</legend>
@@ -121,7 +163,7 @@
   </fieldset>
 
   <fieldset>
-    <legend data-i18n="legMeas">Measurements (plotted parcels)</legend>
+    <legend data-i18n="legMeas">Measurements</legend>
     <label class="chk"><input type="checkbox" id="show-area" checked> <span data-i18n="showArea">Show area (m² / ha)</span></label>
     <label class="chk"><input type="checkbox" id="show-len"> <span data-i18n="showLen">Show edge lengths (m)</span></label>
     <label class="chk"><input type="checkbox" id="do-trace" checked> <span data-i18n="doTrace">Trace boundary from cadastre map</span></label>
@@ -140,14 +182,16 @@ const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
 // ---- i18n ---------------------------------------------------------------
 const I18N = {
   hy: {
-    title:"Հայաստանի կադաստր × OpenStreetMap",
-    sub:"Պաշտոնական e-cadastre GeoServer շերտերը OSM-ի վրա։",
+    title:"Հայաստանի կադաստրի քարտեզ",
+    sub:"Պաշտոնական կադաստրի տվյալները՝ ձեր ընտրած քարտեզի վրա։",
     codesPh:`Մեկ ծածկագիր՝ տողում, օր.
 01-001-0658-0020
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
-    legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ (գծված հողամասեր)",
+    tabCodes:"Ծածկագրեր", tabAuctions:"Աճուրդներ",
+    auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
+    legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
     opacity:"Լցման/շերտի թափանցիկություն",
     showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)", doTrace:"Եզրագիծը վերծանել կադաստրի քարտեզից",
@@ -165,14 +209,16 @@ const I18N = {
     notFound:"չի գտնվել", pointOnly:"միայն կենտրոն կետ (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
   },
   en: {
-    title:"Armenia Cadastre × OpenStreetMap",
-    sub:"Official e-cadastre GeoServer layers overlaid on OSM.",
+    title:"Armenia cadastre map",
+    sub:"Official cadastre data over the basemap of your choice.",
     codesPh:`One code per line, e.g.
 01-001-0658-0020
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Plot all", share:"Share", clear:"Clear",
-    legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements (plotted parcels)",
+    tabCodes:"Cadastral codes", tabAuctions:"Auctions",
+    auctionsSoon:"Open auctions with cadastral codes will be listed here.",
+    legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
     opacity:"Parcel fill / overlay opacity",
     showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)", doTrace:"Trace boundary from cadastre map",
@@ -190,14 +236,16 @@ const I18N = {
     notFound:"not found", pointOnly:"centre point only (cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
   },
   ru: {
-    title:"Кадастр Армении × OpenStreetMap",
-    sub:"Официальные слои e-cadastre GeoServer поверх OSM.",
+    title:"Карта кадастра Армении",
+    sub:"Официальные данные кадастра поверх выбранной подложки.",
     codesPh:`Один код в строке, напр.
 01-001-0658-0020
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
-    legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения (показанные участки)",
+    tabCodes:"Кадастровые коды", tabAuctions:"Аукционы",
+    auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
+    legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
     opacity:"Прозрачность заливки/слоя",
     showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)", doTrace:"Обвести границу по карте кадастра",
@@ -506,6 +554,7 @@ function buildShareURL() {
   if (codes.length) p.set("codes", codes.join(","));
   p.set("base", document.getElementById("basemap").value);
   p.set("lang", LANG);
+  if (TAB !== "codes") p.set("tab", TAB);
   if (ov.length) p.set("ov", ov.join(","));
   p.set("op", document.getElementById("opacity").value);
   p.set("area", document.getElementById("show-area").checked ? 1 : 0);
@@ -543,6 +592,7 @@ async function applyStateFromURL() {
   const q = new URLSearchParams(location.search);
   if (![...q.keys()].length) return;
   if (q.get("lang")) { LANG = q.get("lang"); applyI18n(); }
+  if (q.get("tab")) showTab(q.get("tab"), false);
 
   const base = q.get("base");
   if (base) { document.getElementById("basemap").value = base; switchBase(base); }
@@ -712,10 +762,58 @@ locBtn.href = "#"; locBtn.title = t("locateTitle"); locBtn.innerHTML = "◎";
 locBtn.setAttribute("role", "button");
 L.DomEvent.on(locBtn, "click", (e) => { L.DomEvent.stop(e); toggleLocate(locBtn); });
 
-// Collapsible panel (esp. for mobile)
+// ---- Tabs ---------------------------------------------------------------
+// Both map layers stay visible regardless of tab; only the panel content swaps.
+function showTab(name, push) {
+  const isAuctions = name === "auctions";
+  document.getElementById("pane-codes").hidden = isAuctions;
+  document.getElementById("pane-auctions").hidden = !isAuctions;
+  for (const t of document.querySelectorAll(".tab")) {
+    const on = t.dataset.pane === (isAuctions ? "pane-auctions" : "pane-codes");
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  }
+  TAB = isAuctions ? "auctions" : "codes";
+  if (push) commit();
+}
+let TAB = "codes";
+for (const t of document.querySelectorAll(".tab"))
+  t.onclick = () => showTab(t.dataset.pane === "pane-auctions" ? "auctions" : "codes", true);
+
+// ---- Panel: side panel on desktop, bottom sheet on phones ---------------
 const panelEl = document.getElementById("panel");
+const isPhone = () => window.matchMedia("(max-width: 640px)").matches;
+
+// three snap points: peek (default) -> half -> full
+function sheet(state) {
+  panelEl.classList.remove("half", "full");
+  if (state === "half" || state === "full") panelEl.classList.add(state);
+}
+const sheetState = () => panelEl.classList.contains("full") ? "full"
+                       : panelEl.classList.contains("half") ? "half" : "peek";
+
+document.getElementById("grip").onclick = () =>
+  sheet(sheetState() === "peek" ? "half" : sheetState() === "half" ? "full" : "peek");
+
+// drag the grip vertically between snap points
+let dragY = null;
+const grip = document.getElementById("grip");
+grip.addEventListener("touchstart", e => { dragY = e.touches[0].clientY; }, { passive: true });
+grip.addEventListener("touchend", e => {
+  if (dragY == null) return;
+  const dy = (e.changedTouches[0].clientY - dragY);
+  if (dy < -40) sheet(sheetState() === "peek" ? "half" : "full");
+  else if (dy > 40) sheet(sheetState() === "full" ? "half" : "peek");
+  dragY = null;
+}, { passive: true });
+
 document.getElementById("panelToggle").onclick = () => panelEl.classList.toggle("collapsed");
-if (window.matchMedia("(max-width: 640px)").matches) panelEl.classList.add("collapsed");
+if (isPhone()) panelEl.classList.remove("collapsed");     // sheet starts at peek
+else if (window.innerWidth < 900) panelEl.classList.add("collapsed");
+
+// opening a tab on a phone raises the sheet so the content is visible
+for (const t of document.querySelectorAll(".tab"))
+  t.addEventListener("click", () => { if (isPhone() && sheetState() === "peek") sheet("half"); });
 
 function toggleLocate(btn) {
   if (!("geolocation" in navigator)) { status(t("geoUnsupported")); return; }
