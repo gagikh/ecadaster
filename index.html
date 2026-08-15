@@ -57,8 +57,19 @@
   .acard:hover { border-color:var(--acc); }
   .acard .t { font-size:12px; line-height:1.35; }
   .acard .c { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--acc); margin-top:3px; }
+  .acard .c.nc { font-family:inherit; color:var(--mut); font-style:italic; }
+  .acard.nocode { opacity:.72; }
   .acard .m { display:flex; gap:10px; font-size:11px; color:var(--mut); margin-top:4px; }
   .acard .m .soon { color:#f87171; font-weight:600; }   /* ends within 2 days */
+  .acard .m .who { margin-left:auto; }
+  .acard .go { flex:none; color:var(--acc); text-decoration:none; font-size:13px; padding:0 2px; }
+  .acard .go:hover { text-decoration:underline; }
+  /* a click starts a cadastre lookup that can take a few seconds */
+  .acard.busy { position:relative; opacity:.65; }
+  .acard.busy::after { content:""; position:absolute; top:8px; right:8px;
+    width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--acc);
+    border-radius:50%; animation:aspin .7s linear infinite; }
+  @keyframes aspin { to { transform:rotate(360deg); } }
   .grip { display:none; }
   @media (max-width: 640px) {
     /* Panel becomes a bottom sheet: map stays usable, list within thumb reach. */
@@ -210,8 +221,8 @@ const I18N = {
     aAllRegions:"Բոլորը", aOpenOnly:"Միայն բաց աճուրդները",
     aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
-    aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի։", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
-    aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
+    aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
+    aCode:"Կադաստրային ծածկագիր", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
     aOrganizer:"Կազմակերպիչ", aEnds:"Ավարտ", aOpenLot:"Բացել աճուրդի էջը", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
     auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
@@ -243,8 +254,8 @@ const I18N = {
     aAllRegions:"All", aOpenOnly:"Open auctions only",
     aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
-    aNoCode:"This lot has no cadastral code.", aNoGeom:"Parcel not found in the cadastre.",
-    aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
+    aNoCode:"No cadastral code — opening the lot page.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
+    aCode:"Cadastral code", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
     aOrganizer:"Organizer", aEnds:"Ends", aOpenLot:"Open the lot page", aSoon:"Auction list is not connected yet (server pending).",
     auctionsSoon:"Open auctions with cadastral codes will be listed here.",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
@@ -276,8 +287,8 @@ const I18N = {
     aAllRegions:"Все", aOpenOnly:"Только открытые аукционы",
     aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
-    aNoCode:"У лота нет кадастрового кода.", aNoGeom:"Участок не найден в кадастре.",
-    aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
+    aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
+    aCode:"Кадастровый код", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
     aOrganizer:"Организатор", aEnds:"Окончание", aOpenLot:"Открыть страницу лота", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
     auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
@@ -313,6 +324,8 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
   const lb = document.querySelector(".locate-btn"); if (lb) lb.title = t("locateTitle");
   const ls = document.getElementById("lang"); if (ls) ls.value = LANG;
+  const allOpt = document.querySelector("#a-region option[value='']");
+  if (allOpt) allOpt.textContent = t("aAllRegions");
   for (const g of document.querySelectorAll("#a-region optgroup[data-hy]"))
     g.label = place(g.dataset.hy);
   for (const o of document.querySelectorAll("#a-region option[data-marz]"))
@@ -662,15 +675,7 @@ async function applyStateFromURL() {
     else map.setView([40.3, 44.9], 8);
   }
 }
-async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
-try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; } catch { LANG = "hy"; }
-applyI18n();
-document.getElementById("lang").onchange = (e) => {
-  LANG = e.target.value; try { localStorage.setItem("lang", LANG); } catch {} applyI18n(); commit();
-};
-restore();
-map.on("moveend", syncURL);
-window.addEventListener("popstate", restore);
+// (initialisation moved to boot() at the end of the script)
 
 // EPSG:2400000 (Armenian GK zone 8) <-> WGS84. Same maths as the Worker.
 function toGk8(lat, lon) {
@@ -905,6 +910,21 @@ const PLACE = {
   "Երևան":["Yerevan","Ереван"],
 };
 // Armenian is the source of truth (it matches the auction data); EN/RU are labels.
+// Organiser names are either "<place> համայնք" or a ministry-level body.
+const ORG = {
+  "Պետական գույքի կառավարման կոմիտե":
+    ["State Property Management Committee", "Комитет по управлению госимуществом"],
+};
+function org(s) {
+  if (!s) return "";
+  if (LANG === "hy") return s;
+  const i = LANG === "en" ? 0 : 1;
+  if (ORG[s]) return ORG[s][i];
+  const m = s.match(/^(.+?)\s+համայնք$/u);
+  if (m) return LANG === "en" ? place(m[1].trim()) + " community"
+                             : "община " + place(m[1].trim());
+  return s;
+}
 const place = (hy) => LANG === "hy" ? hy : ((PLACE[hy] || [])[LANG === "en" ? 0 : 1] || hy);
 
 const MARZ = {
@@ -994,14 +1014,16 @@ function renderAuctions() {
   for (const a of rows) {
     const d = daysLeft(a.endsAt);
     const el = document.createElement("div");
-    el.className = "acard";
+    el.className = "acard" + (a.code ? "" : " nocode");
     el.innerHTML = `<div class="t">${a.title || ""}</div>` +
-      (a.code ? `<div class="c">${a.code}</div>` : "") +
+      (a.code ? `<div class="c">${a.code}</div>`
+              : `<div class="c nc">${t("aNoCodeTag")}</div>`) +
       `<div class="m"><span>${fmtPrice(a.priceStart)}</span>` +
       (d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
           d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>` : "") +
-      `<span style="margin-left:auto">${a.organizer || ""}</span></div>`;
-    el.onclick = () => focusAuction(a);
+      `<span class="who">${org(a.organizer)}</span>` +
+      `<a class="go" href="${a.url}" target="_blank" rel="noopener" title="${t("aOpenLot")}">↗</a></div>`;
+    el.onclick = (ev) => { if (!ev.target.closest("a")) pickAuction(a, el); };
     list.appendChild(el);
   }
 }
@@ -1012,8 +1034,20 @@ const aStatusHasMsg = () => !!document.getElementById("aStatus").textContent;
 const AUCTION_COLOR = "#f59e0b";
 const drawn = new Map();                       // code -> layer
 
+// Wraps focusAuction so the clicked card shows a spinner while we look the
+// parcel up — the cadastre round-trip plus tracing takes a few seconds.
+async function pickAuction(a, el) {
+  if (el.classList.contains("busy")) return;
+  el.classList.add("busy");
+  try { await focusAuction(a); } finally { el.classList.remove("busy"); }
+}
+
 async function focusAuction(a) {
-  if (!a.code) { aStatus(t("aNoCode")); return; }
+  if (!a.code) {                       // nothing to draw — open the lot instead
+    aStatus(t("aNoCode"));
+    if (a.url) window.open(a.url, "_blank", "noopener");
+    return;
+  }
 
   let layer = drawn.get(a.code);
   if (!layer) {
@@ -1048,23 +1082,29 @@ function auctionPopup(a, parcel) {
   const row = (k, v) => v == null || v === "" ? "" : `<tr><td>${k}</td><td>${v}</td></tr>`;
   const d = daysLeft(a.endsAt);
   return `<b>${a.title || ""}</b>
-    <div style="font-family:ui-monospace,monospace;color:#0b7">${a.code}</div>
     <table style="margin-top:4px">
+      ${row(t("aCode"), `<span style="font-family:ui-monospace,Menlo,Consolas,monospace">${a.code}</span>`)}
       ${row(t("aPriceStart"), fmtPrice(a.priceStart))}
       ${row(t("aValuation"), fmtPrice(a.valuation))}
       ${row(t("aDeposit"), fmtPrice(a.deposit))}
-      ${row(t("aOrganizer"), a.organizer)}
-      ${row(t("aEnds"), a.endsAt + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : ""))}
+      ${row(t("aOrganizer"), org(a.organizer))}
+      ${row(t("aEnds"), a.endsAt ? a.endsAt + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : "") : null)}
       ${row(t("popupArea"), parcel && parcel.area ? fmtArea(parcel.area) : null)}
     </table>
     <a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
 document.getElementById("aSearch").onclick = async () => { await loadAuctions(true); renderAuctions(); };
+// Clear: reset the filters, wipe the results and remove auction parcels
+// from the map. Press Search to fetch again.
 document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
-  auctionLayer.clearLayers(); drawn.clear();
-  renderAuctions();
+  document.getElementById("a-open").checked = true;
+  document.getElementById("a-view").checked = false;
+  auctionLayer.clearLayers();
+  drawn.clear();
+  document.getElementById("aList").innerHTML = "";
+  aStatus("");
 };
 for (const id of ["a-open", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
 
@@ -1138,6 +1178,23 @@ map.on("locationerror", (e) => {
   const lb = document.querySelector(".locate-btn"); if (lb) lb.classList.remove("active");
   status(e.code === 1 ? t("locDenied") : t("locFail"));
 });
+
+// ---- Boot ---------------------------------------------------------------
+// Runs last so every declaration above exists: restore() reads ?tab= and may
+// call showTab(), which touches TAB / AUCTIONS / drawn.
+async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
+async function boot() {
+  try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; }
+  catch (e) { LANG = "hy"; }
+  applyI18n();
+  document.getElementById("lang").onchange = (e) => {
+    LANG = e.target.value; try { localStorage.setItem("lang", LANG); } catch (x) {} applyI18n(); commit();
+  };
+  await restore();
+  map.on("moveend", syncURL);
+  window.addEventListener("popstate", restore);
+}
+boot();
 </script>
 </body>
 </html>
