@@ -221,8 +221,11 @@ function render() {
   const main = document.getElementById("main");
   if (!rows.length) { main.innerHTML = `<p class="empty">${t("none")}</p>`; return; }
 
-  const prices = rows.map(a => a.priceStart).filter(Number.isFinite);
-  const withArea = rows.filter(a => Number.isFinite(a.area) && a.area > 0 && Number.isFinite(a.priceStart));
+  // 0֏ appears on lots that are not priced yet; counting it would make every
+  // "lowest price" zero.
+  const prices = rows.map(a => a.priceStart).filter(n => Number.isFinite(n) && n > 0);
+  const withArea = rows.filter(a => Number.isFinite(a.area) && a.area > 0
+                                 && Number.isFinite(a.priceStart) && a.priceStart > 0);
   const sqm = withArea.map(a => a.priceStart / a.area);
   const coded = rows.filter(a => a.code).length;
 
@@ -293,7 +296,7 @@ function render() {
             <th class="n">${t("perSqm")}</th><th>${t("ends")}</th></tr>
         ${cheapest.map(a => `<tr>
           <td><a href="${a.url}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
-          <td>${esc(place(String(a.organizer || "").replace(/\\s+համայնք$/u, "")))}</td>
+          <td>${esc(place(String(a.organizer || "").replace(/\s+համայնք$/u, "")))}</td>
           <td class="n">${areaFmt(a.area)}</td>
           <td class="n">${money(a.priceStart)}</td>
           <td class="n">${money(a.sqm)}</td>
