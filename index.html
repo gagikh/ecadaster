@@ -938,15 +938,9 @@ function renderAuctions() {
 
   let rows = AUCTIONS || [];
   if (openOnly) rows = rows.filter(a => !a.endsAt || Date.parse((a.endsAt || "").replace(" ", "T")) > Date.now());
-  if (region) {
-    const wanted = region.startsWith("marz:")
-      ? [region.slice(5), ...(MARZ[region.slice(5)] || [])]
-      : [region];
-    rows = rows.filter(a => {
-      const hay = `${a.organizer || ""} ${a.region || ""} ${a.title || ""}`;
-      return wanted.some(w => hay.includes(w));
-    });
-  }
+  // matchRegion (regions.js) keys off the cadastral code's marz digits and
+  // falls back to case-insensitive text — see the notes there.
+  if (region) rows = rows.filter(a => matchRegion(a, region));
   if (inView) {
     const located = rows.filter(a => a.lat != null);
     rows = located.filter(a => b.contains([a.lat, a.lng]));

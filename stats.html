@@ -177,13 +177,7 @@ function selected() {
   const openOnly = document.getElementById("openOnly").checked;
   let rows = LOTS;
   if (openOnly) rows = rows.filter(a => !a.endsAt || Date.parse(String(a.endsAt).replace(" ", "T")) > Date.now());
-  if (v) {
-    const wanted = v.startsWith("marz:") ? [v.slice(5), ...(MARZ[v.slice(5)] || [])] : [v];
-    rows = rows.filter(a => {
-      const hay = `${a.organizer || ""} ${a.region || ""} ${a.title || ""}`;
-      return wanted.some(w => hay.includes(w));
-    });
-  }
+  if (v) rows = rows.filter(a => matchRegion(a, v));      // shared, see regions.js
   return rows;
 }
 

@@ -102,3 +102,47 @@ var MARZ = {
 function placeIn(hy, lang) {
   return lang === "hy" ? hy : ((PLACE[hy] || [])[lang === "en" ? 0 : 1] || hy);
 }
+
+/**
+ * Marz -> the first two digits of a cadastral code. Verified against live
+ * auction data for 02, 03, 06, 07, 08, 09 and 10 (and 01 from Yerevan test
+ * codes); 04, 05 and 11 follow the same alphabetical order, Yerevan first.
+ */
+var MARZ_CODE = {
+  "Երևան": "01", "Արագածոտն": "02", "Արարատ": "03", "Արմավիր": "04",
+  "Գեղարքունիք": "05", "Լոռի": "06", "Կոտայք": "07", "Շիրակ": "08",
+  "Սյունիք": "09", "Վայոց ձոր": "10", "Տավուշ": "11",
+};
+
+/**
+ * Does a lot belong to the selected region?
+ *   ""            -> everything
+ *   "marz:<name>" -> the code's marz digits; text only when there is no code
+ *   "<community>" -> the organising community, then the title as a fallback
+ *
+ * Titles arrive in mixed case and in ALL CAPS, so text comparison is done on
+ * uppercased strings — Armenian uppercases cleanly in JS.
+ */
+function matchRegion(lot, value) {
+  if (!value) return true;
+  const up = (s) => String(s || "").toUpperCase();
+  const hay = up(`${lot.organizer || ""} ${lot.region || ""} ${lot.title || ""}`);
+  const code = String(lot.code || lot.cadastre_code || "");
+
+  if (value.startsWith("marz:")) {
+    const marz = value.slice(5);
+    const digits = MARZ_CODE[marz];
+    if (code && digits) return code.slice(0, 2) === digits;   // exact
+    // no code: fall back to the marz name or any of its communities
+    return [marz, ...(MARZ[marz] || [])].some(w => hay.includes(up(w)));
+  }
+
+  // A community: its own auctions are organised by it.
+  if (up(lot.organizer).startsWith(up(value))) return true;
+  // Otherwise the lot must name the place AND sit in the right marz, which
+  // stops "Արարատ" the town from matching all of "Արարատի մարզ".
+  if (!hay.includes(up(value))) return false;
+  const marz = Object.keys(MARZ).find(m => (MARZ[m] || []).includes(value));
+  const digits = marz ? MARZ_CODE[marz] : null;
+  return !code || !digits || code.slice(0, 2) === digits;
+}
