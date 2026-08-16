@@ -165,7 +165,8 @@ function histogram(values, bins = 12) {
 
 /** Monday of the week a date falls in, as YYYY-MM-DD. */
 function weekStart(iso) {
-  const d = new Date(String(iso).replace(" ", "T"));
+  const raw = String(iso).trim().replace(" ", "T");
+  const d = new Date(/[Zz]|[+-]\d{2}:?\d{2}$/.test(raw) ? raw : raw + "+04:00");
   if (isNaN(d)) return null;
   const day = (d.getDay() + 6) % 7;                 // Monday = 0
   d.setDate(d.getDate() - day);
@@ -176,7 +177,12 @@ function selected() {
   const v = document.getElementById("region").value;
   const openOnly = document.getElementById("openOnly").checked;
   let rows = LOTS;
-  if (openOnly) rows = rows.filter(a => !a.endsAt || Date.parse(String(a.endsAt).replace(" ", "T")) > Date.now());
+  // stored dates are Yerevan wall-clock with no zone marker — see time.mjs
+  if (openOnly) rows = rows.filter(a => {
+    if (!a.endsAt) return true;
+    const s = String(a.endsAt).trim().replace(" ", "T");
+    return Date.parse(/[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "+04:00") > Date.now();
+  });
   if (v) rows = rows.filter(a => matchRegion(a, v));      // shared, see regions.js
   return rows;
 }

@@ -126,13 +126,17 @@ var MARZ_CODE = {
 function matchRegion(lot, value) {
   if (!value) return true;
   const up = (s) => String(s || "").toUpperCase();
-  const hay = up(`${lot.organizer || ""} ${lot.region || ""} ${lot.title || ""}`);
+  const hay = up(`${lot.organizer || ""} ${lot.title || ""}`);
   const code = String(lot.code || lot.cadastre_code || "");
+  // `marz` is stored as a small integer (the code's first two digits); fall
+  // back to the code itself for rows served without it.
+  const marzNo = lot.marz != null ? String(lot.marz).padStart(2, "0")
+               : code ? code.slice(0, 2) : "";
 
   if (value.startsWith("marz:")) {
     const marz = value.slice(5);
     const digits = MARZ_CODE[marz];
-    if (code && digits) return code.slice(0, 2) === digits;   // exact
+    if (marzNo && digits) return marzNo === digits;            // exact
     // no code: fall back to the marz name or any of its communities
     return [marz, ...(MARZ[marz] || [])].some(w => hay.includes(up(w)));
   }

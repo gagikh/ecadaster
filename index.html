@@ -904,8 +904,12 @@ let AUCTIONS = null;                                  // cached for the session
 
 const aStatus = (m) => document.getElementById("aStatus").textContent = m || "";
 const fmtPrice = (n) => n == null ? "" : n.toLocaleString("hy-AM") + "֏";
+// Auction dates are stored as the site prints them — Yerevan wall-clock with
+// no zone — so say so, otherwise a visitor abroad sees the wrong days-left.
+const SITE_TZ = "+04:00";
 const daysLeft = (iso) => {
-  const t = Date.parse((iso || "").replace(" ", "T"));
+  const s = String(iso || "").trim().replace(" ", "T");
+  const t = Date.parse(/[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + SITE_TZ);
   return Number.isFinite(t) ? Math.ceil((t - Date.now()) / 86400000) : null;
 };
 
@@ -937,7 +941,7 @@ function renderAuctions() {
   const b = map.getBounds();
 
   let rows = AUCTIONS || [];
-  if (openOnly) rows = rows.filter(a => !a.endsAt || Date.parse((a.endsAt || "").replace(" ", "T")) > Date.now());
+  if (openOnly) rows = rows.filter(a => { const d = daysLeft(a.endsAt); return d == null || d >= 0; });
   // matchRegion (regions.js) keys off the cadastral code's marz digits and
   // falls back to case-insensitive text — see the notes there.
   if (region) rows = rows.filter(a => matchRegion(a, region));
