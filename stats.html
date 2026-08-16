@@ -224,8 +224,10 @@ function render() {
   // 0֏ appears on lots that are not priced yet; counting it would make every
   // "lowest price" zero.
   const prices = rows.map(a => a.priceStart).filter(n => Number.isFinite(n) && n > 0);
-  const withArea = rows.filter(a => Number.isFinite(a.area) && a.area > 0
-                                 && Number.isFinite(a.priceStart) && a.priceStart > 0);
+  // Two different questions: how many lots we know the area of (a crawl
+  // progress number), and how many can yield ֏/m² (needs a price too).
+  const withAnyArea = rows.filter(a => Number.isFinite(a.area) && a.area > 0);
+  const withArea = withAnyArea.filter(a => Number.isFinite(a.priceStart) && a.priceStart > 0);
   const sqm = withArea.map(a => a.priceStart / a.area);
   const coded = rows.filter(a => a.code).length;
 
@@ -255,7 +257,7 @@ function render() {
   main.innerHTML = `
     <div class="cards">
       ${card(t("lots"), rows.length, "",
-             `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withArea.length}/${coded}`)}
+             `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withAnyArea.length}/${coded}`)}
       ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc",
              `${money(prices.reduce((s, n) => s + n, 0))} · ${prices.length} ${t("lotsShort")}`)}
       ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
