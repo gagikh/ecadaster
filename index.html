@@ -55,8 +55,6 @@
   .pane { min-height:268px; }          /* codes textarea + buttons ≈ auctions search + list */
   .pane[hidden] { display:none; }
   .alist { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
-  a.tab { text-decoration:none; display:inline-block; }
-  a.tab::after { content:" \2197"; font-size:10px; opacity:.7; }
   .acard { border:1px solid var(--line); border-radius:8px; padding:8px; cursor:pointer; }
   .acard:hover { border-color:var(--acc); }
   .acard .t { font-size:12px; line-height:1.35; }
@@ -103,6 +101,9 @@
   }
   .locate-btn { color:#111; font-size:18px; text-align:center; }
   .locate-btn.active { color:#2563eb; }
+  /* statistics: a fourth button under zoom +/- and locate */
+  .stats-btn { color:#111; font-size:15px; text-align:center; text-decoration:none; }
+  .stats-btn:hover { color:#2563eb; }
   .panel-toggle { position:absolute; top:8px; right:8px; z-index:2; width:32px; height:32px;
     border:1px solid var(--line); border-radius:8px; background:#1f2937; color:var(--txt);
     font-size:16px; line-height:1; cursor:pointer; }
@@ -134,8 +135,6 @@
             data-pane="pane-codes" data-i18n="tabCodes">Cadastral codes</button>
     <button class="tab" id="tab-auctions" role="tab" aria-selected="false"
             data-pane="pane-auctions" data-i18n="tabAuctions">Auctions</button>
-    <a class="tab" id="tab-stats" href="stats.html" target="_blank" rel="noopener"
-       data-i18n="tabStats">Statistics</a>
   </div>
 
   <div class="pane" id="pane-codes" role="tabpanel">
@@ -337,6 +336,8 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
   document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
   const lb = document.querySelector(".locate-btn"); if (lb) lb.title = t("locateTitle");
+  const sb = document.getElementById("tab-stats");
+  if (sb) sb.title = t("tabStats");
   if (typeof syncStatsLink === "function") syncStatsLink();   // keep ?lang= current
   const ls = document.getElementById("lang"); if (ls) ls.value = LANG;
   const allOpt = document.querySelector("#a-region option[value='']");
@@ -822,6 +823,18 @@ const locBtn = L.DomUtil.create("a", "locate-btn", map.zoomControl.getContainer(
 locBtn.href = "#"; locBtn.title = t("locateTitle"); locBtn.innerHTML = "◎";
 locBtn.setAttribute("role", "button");
 L.DomEvent.on(locBtn, "click", (e) => { L.DomEvent.stop(e); toggleLocate(locBtn); });
+
+// Statistics: a fourth button in the same stack. It is a real link, so it can
+// be opened in a new tab or bookmarked; the region and language ride along.
+const statsBtn = L.DomUtil.create("a", "stats-btn", map.zoomControl.getContainer());
+statsBtn.id = "tab-stats";
+statsBtn.href = "stats.html";
+statsBtn.target = "_blank";
+statsBtn.rel = "noopener";
+statsBtn.title = t("tabStats");
+statsBtn.innerHTML = "&#128202;";                      // bar chart
+statsBtn.setAttribute("role", "button");
+L.DomEvent.disableClickPropagation(statsBtn);
 
 // ---- Tabs ---------------------------------------------------------------
 let TAB = "codes";          // declared before showTab: restore() runs during init

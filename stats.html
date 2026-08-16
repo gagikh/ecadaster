@@ -127,12 +127,18 @@ let LOTS = [];
 // ---- formatting ---------------------------------------------------------
 const nf = () => new Intl.NumberFormat(LANG === "ru" ? "ru-RU" : LANG === "en" ? "en-US" : "hy-AM");
 const money = (n) => n == null ? "—" : nf().format(Math.round(n)) + "֏";
+// Abbreviations have to be localised — "2.0B֏" reads as nothing in Armenian.
+const SCALE = {
+  hy: ["հզր", "մլն", "մլրդ"],
+  en: ["K", "M", "B"],
+  ru: ["тыс", "млн", "млрд"],
+};
 const short = (n) => {
   if (n == null) return "—";
-  const a = Math.abs(n);
-  if (a >= 1e9) return (n / 1e9).toFixed(1) + "B֏";
-  if (a >= 1e6) return (n / 1e6).toFixed(1) + "M֏";
-  if (a >= 1e3) return Math.round(n / 1e3) + "K֏";
+  const u = SCALE[LANG] || SCALE.hy, a = Math.abs(n), sp = LANG === "en" ? "" : " ";
+  if (a >= 1e9) return (n / 1e9).toFixed(1) + sp + u[2] + "֏";
+  if (a >= 1e6) return (n / 1e6).toFixed(1) + sp + u[1] + "֏";
+  if (a >= 1e3) return Math.round(n / 1e3) + sp + u[0] + "֏";
   return Math.round(n) + "֏";
 };
 const areaFmt = (m2) => m2 == null ? "—"
@@ -247,7 +253,8 @@ function render() {
     <div class="cards">
       ${card(t("lots"), rows.length,
              "", `${t("withCode")}: ${coded} · ${t("withArea")}: ${withArea.length}`)}
-      ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc")}
+      ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc",
+             `${money(prices.reduce((s, n) => s + n, 0))} · ${prices.length} ${t("lotsShort")}`)}
       ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
       ${card(t("priceMed"), money(median(prices)))}
       ${card(t("priceMax"), money(prices.length ? Math.max(...prices) : null))}
