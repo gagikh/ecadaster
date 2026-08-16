@@ -8,6 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="regions.js"></script>
 <style>
   :root { --bg:#0f172a; --panel:#111827; --line:#1f2937; --txt:#e5e7eb; --mut:#9ca3af; --acc:#38bdf8; }
   * { box-sizing:border-box; }
@@ -54,6 +55,8 @@
   .pane { min-height:268px; }          /* codes textarea + buttons ≈ auctions search + list */
   .pane[hidden] { display:none; }
   .alist { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  a.tab { text-decoration:none; display:inline-block; }
+  a.tab::after { content:" \2197"; font-size:10px; opacity:.7; }
   .acard { border:1px solid var(--line); border-radius:8px; padding:8px; cursor:pointer; }
   .acard:hover { border-color:var(--acc); }
   .acard .t { font-size:12px; line-height:1.35; }
@@ -131,6 +134,8 @@
             data-pane="pane-codes" data-i18n="tabCodes">Cadastral codes</button>
     <button class="tab" id="tab-auctions" role="tab" aria-selected="false"
             data-pane="pane-auctions" data-i18n="tabAuctions">Auctions</button>
+    <a class="tab" id="tab-stats" href="stats.html" target="_blank" rel="noopener"
+       data-i18n="tabStats">Statistics</a>
   </div>
 
   <div class="pane" id="pane-codes" role="tabpanel">
@@ -226,11 +231,11 @@ const I18N = {
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
-    tabCodes:"Ծածկագրեր", tabAuctions:"Աճուրդներ",
+    tabCodes:"Ծածկագրեր", tabStats:"Վիճակագրություն", tabAuctions:"Աճուրդներ",
     aAllRegions:"Բոլորը", aOpenOnly:"Միայն բաց աճուրդները",
     aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
-    aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
+    aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoGeo:"Դիրքերը դեռ հաշվարկված չեն կադաստրում։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
     aCode:"Կադաստրային ծածկագիր", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
     aOrganizer:"Կազմակերպիչ", aStarts:"Մեկնարկ", aEnds:"Ավարտ", aOpenLot:"Բացել աճուրդի էջը", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
     auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
@@ -259,11 +264,11 @@ const I18N = {
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Plot all", share:"Share", clear:"Clear",
-    tabCodes:"Cadastral codes", tabAuctions:"Auctions",
+    tabCodes:"Cadastral codes", tabStats:"Statistics", tabAuctions:"Auctions",
     aAllRegions:"All", aOpenOnly:"Open auctions only",
     aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
-    aNoCode:"No cadastral code — opening the lot page.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
+    aNoCode:"No cadastral code — opening the lot page.", aNoGeo:"Positions not resolved from the cadastre yet.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
     aCode:"Cadastral code", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
     aOrganizer:"Organizer", aStarts:"Starts", aEnds:"Ends", aOpenLot:"Open the lot page", aSoon:"Auction list is not connected yet (server pending).",
     auctionsSoon:"Open auctions with cadastral codes will be listed here.",
@@ -292,11 +297,11 @@ const I18N = {
 01-001-0658-0017
 01-001-0658-0021`,
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
-    tabCodes:"Кадастровые коды", tabAuctions:"Аукционы",
+    tabCodes:"Кадастровые коды", tabStats:"Статистика", tabAuctions:"Аукционы",
     aAllRegions:"Все", aOpenOnly:"Только открытые аукционы",
     aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
-    aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
+    aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoGeo:"Координаты ещё не получены из кадастра.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
     aCode:"Кадастровый код", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
     aOrganizer:"Организатор", aStarts:"Начало", aEnds:"Окончание", aOpenLot:"Открыть страницу лота", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
     auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
@@ -332,6 +337,7 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
   document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
   const lb = document.querySelector(".locate-btn"); if (lb) lb.title = t("locateTitle");
+  if (typeof syncStatsLink === "function") syncStatsLink();   // keep ?lang= current
   const ls = document.getElementById("lang"); if (ls) ls.value = LANG;
   const allOpt = document.querySelector("#a-region option[value='']");
   if (allOpt) allOpt.textContent = t("aAllRegions");
@@ -838,86 +844,6 @@ for (const t of document.querySelectorAll(".tab"))
 
 // ---- Auctions tab -------------------------------------------------------
 // Marz -> communities, as published by e-auctions.am (Տարածաշրջան filter).
-const PLACE = {
-  "Արագածոտն":["Aragatsotn","Арагацотн"],
-  "Ալագյազ":["Alagyaz","Алагяз"],
-  "Աշտարակ":["Ashtarak","Аштарак"],
-  "Ապարան":["Aparan","Апаран"],
-  "Արևուտ":["Arevut","Аревут"],
-  "Թալին":["Talin","Талин"],
-  "Ծաղկահովիտ":["Tsaghkahovit","Цахкаовит"],
-  "Մեծաձոր":["Metsadzor","Мецадзор"],
-  "Շամիրամ":["Shamiram","Шамирам"],
-  "Արարատ":["Ararat","Арарат"],
-  "Արտաշատ":["Artashat","Арташат"],
-  "Մասիս":["Masis","Масис"],
-  "Վեդի":["Vedi","Веди"],
-  "Վերին Դվին":["Verin Dvin","Верин Двин"],
-  "Արմավիր":["Armavir","Армавир"],
-  "Արաքս":["Araks","Аракс"],
-  "Բաղրամյան":["Baghramyan","Баграмян"],
-  "Մեծամոր":["Metsamor","Мецамор"],
-  "Վաղարշապատ":["Vagharshapat","Вагаршапат"],
-  "Փարաքար":["Parakar","Паракар"],
-  "Ֆերիկ":["Ferik","Ферик"],
-  "Գեղարքունիք":["Gegharkunik","Гегаркуник"],
-  "Գավառ":["Gavar","Гавар"],
-  "Ճամբարակ":["Chambarak","Чамбарак"],
-  "Մարտունի":["Martuni","Мартуни"],
-  "Սևան":["Sevan","Севан"],
-  "Վարդենիս":["Vardenis","Варденис"],
-  "Լոռի":["Lori","Лори"],
-  "Ալավերդի":["Alaverdi","Алаверди"],
-  "Գյուլագարակ":["Gyulagarak","Гюлагарак"],
-  "Թումանյան":["Tumanyan","Туманян"],
-  "Լերմոնտովո":["Lermontovo","Лермонтово"],
-  "Լոռի Բերդ":["Lori Berd","Лори Берд"],
-  "Սպիտակ":["Spitak","Спитак"],
-  "Ստեփանավան":["Stepanavan","Степанаван"],
-  "Վանաձոր":["Vanadzor","Ванадзор"],
-  "Տաշիր":["Tashir","Ташир"],
-  "Փամբակ":["Pambak","Памбак"],
-  "Ֆիոլետովո":["Fioletovo","Фиолетово"],
-  "Կոտայք":["Kotayk","Котайк"],
-  "Աբովյան":["Abovyan","Абовян"],
-  "Ակունք":["Akunk","Акунк"],
-  "Արզնի":["Arzni","Арзни"],
-  "Բյուրեղավան":["Byureghavan","Бюрегаван"],
-  "Գառնի":["Garni","Гарни"],
-  "Ծաղկաձոր":["Tsaghkadzor","Цахкадзор"],
-  "Հրազդան":["Hrazdan","Раздан"],
-  "Նաիրի":["Nairi","Наири"],
-  "Նոր Հաճըն":["Nor Hachn","Нор Ачн"],
-  "Չարենցավան":["Charentsavan","Чаренцаван"],
-  "Ջրվեժ":["Jrvezh","Джрвеж"],
-  "Շիրակ":["Shirak","Ширак"],
-  "Ախուրյան":["Akhuryan","Ахурян"],
-  "Ամասիա":["Amasia","Амасия"],
-  "Անի":["Ani","Ани"],
-  "Աշոցք":["Ashotsk","Ашоцк"],
-  "Արթիկ":["Artik","Артик"],
-  "Գյումրի":["Gyumri","Гюмри"],
-  "Սյունիք":["Syunik","Сюник"],
-  "Գորիս":["Goris","Горис"],
-  "Կապան":["Kapan","Капан"],
-  "Մեղրի":["Meghri","Мегри"],
-  "Սիսիան":["Sisian","Сисиан"],
-  "Տաթև":["Tatev","Татев"],
-  "Տեղ":["Tegh","Тег"],
-  "Քաջարան":["Kajaran","Каджаран"],
-  "Վայոց ձոր":["Vayots Dzor","Вайоц Дзор"],
-  "Արենի":["Areni","Арени"],
-  "Եղեգիս":["Yeghegis","Егегис"],
-  "Եղեգնաձոր":["Yeghegnadzor","Егегнадзор"],
-  "Ջերմուկ":["Jermuk","Джермук"],
-  "Վայք":["Vayk","Вайк"],
-  "Տավուշ":["Tavush","Тавуш"],
-  "Բերդ":["Berd","Берд"],
-  "Դիլիջան":["Dilijan","Дилижан"],
-  "Իջևան":["Ijevan","Иджеван"],
-  "Նոյեմբերյան":["Noyemberyan","Ноемберян"],
-  "Երևան":["Yerevan","Ереван"],
-};
 // Armenian is the source of truth (it matches the auction data); EN/RU are labels.
 // Organiser names are either "<place> համայնք" or a ministry-level body.
 const ORG = {
@@ -936,19 +862,6 @@ function org(s) {
 }
 const place = (hy) => LANG === "hy" ? hy : ((PLACE[hy] || [])[LANG === "en" ? 0 : 1] || hy);
 
-const MARZ = {
-  "Արագածոտն": ["Ալագյազ","Աշտարակ","Ապարան","Արևուտ","Թալին","Ծաղկահովիտ","Մեծաձոր","Շամիրամ"],
-  "Արարատ":    ["Արարատ","Արտաշատ","Մասիս","Վեդի","Վերին Դվին"],
-  "Արմավիր":   ["Արաքս","Արմավիր","Բաղրամյան","Մեծամոր","Վաղարշապատ","Փարաքար","Ֆերիկ"],
-  "Գեղարքունիք":["Գավառ","Ճամբարակ","Մարտունի","Սևան","Վարդենիս"],
-  "Լոռի":      ["Ալավերդի","Գյուլագարակ","Թումանյան","Լերմոնտովո","Լոռի Բերդ","Սպիտակ","Ստեփանավան","Վանաձոր","Տաշիր","Փամբակ","Ֆիոլետովո"],
-  "Կոտայք":    ["Աբովյան","Ակունք","Արզնի","Բյուրեղավան","Գառնի","Ծաղկաձոր","Հրազդան","Նաիրի","Նոր Հաճըն","Չարենցավան","Ջրվեժ"],
-  "Շիրակ":     ["Ախուրյան","Ամասիա","Անի","Աշոցք","Արթիկ","Գյումրի"],
-  "Սյունիք":   ["Գորիս","Կապան","Մեղրի","Սիսիան","Տաթև","Տեղ","Քաջարան"],
-  "Վայոց ձոր": ["Արենի","Եղեգիս","Եղեգնաձոր","Ջերմուկ","Վայք"],
-  "Տավուշ":    ["Բերդ","Դիլիջան","Իջևան","Նոյեմբերյան"],
-  "Երևան":     ["Երևան"],
-};
 
 (function buildRegionSelect() {
   const sel = document.getElementById("a-region");
@@ -1021,7 +934,11 @@ function renderAuctions() {
       return wanted.some(w => hay.includes(w));
     });
   }
-  if (inView) rows = rows.filter(a => a.lat != null && b.contains([a.lat, a.lng]));
+  if (inView) {
+    const located = rows.filter(a => a.lat != null);
+    rows = located.filter(a => b.contains([a.lat, a.lng]));
+    if (!located.length) aStatus(t("aNoGeo"));       // nothing geocoded yet
+  }
   // Sorted by cadastral code, so parcels in the same block sit together;
   // lots without a code go last, ordered by deadline. Compare the digits
   // only — localeCompare treats "-" as ignorable punctuation in some locales.
@@ -1140,6 +1057,19 @@ document.getElementById("aClear").onclick = () => {
 };
 for (const id of ["a-open", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
 
+// The statistics page reads the same /auctions payload, so it only needs to
+// know which region and language the map is showing.
+function syncStatsLink() {
+  const el = document.getElementById("tab-stats");
+  if (!el) return;
+  const p = new URLSearchParams();
+  const r = document.getElementById("a-region").value;
+  if (r) p.set("region", r);
+  p.set("lang", LANG);
+  el.href = "stats.html?" + p.toString();
+}
+document.getElementById("a-region").addEventListener("change", syncStatsLink);
+
 // ---- Panel: side panel on desktop, bottom sheet on phones ---------------
 const panelEl = document.getElementById("panel");
 const isPhone = () => window.matchMedia("(max-width: 640px)").matches;
@@ -1216,6 +1146,7 @@ map.on("locationerror", (e) => {
 // call showTab(), which touches TAB / AUCTIONS / drawn.
 async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
 async function boot() {
+  syncStatsLink();
   console.info("ecadaster build 2026-08-15-2350");
   try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; }
   catch (e) { LANG = "hy"; }

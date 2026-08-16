@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="hy">
+<head>
+<meta charset="utf-8">
+<meta name="build" content="2026-08-16-stats-1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Աճուրդների վիճակագրություն</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f172a'/><path d='M6 22l6-9 5 6 3-4 6 7z' fill='%2338bdf8'/></svg>">
+<script src="regions.js"></script>
+<style>
+  :root { --bg:#0f172a; --panel:#111827; --line:#1f2937; --txt:#e5e7eb; --mut:#9ca3af;
+          --acc:#38bdf8; --acc2:#f59e0b; --good:#34d399; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+           padding:14px 20px; border-bottom:1px solid var(--line); background:var(--panel);
+           position:sticky; top:0; z-index:5; }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  .grow { flex:1; }
+  select, button, a.btn { background:#1f2937; color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:7px 10px; font:inherit; cursor:pointer; text-decoration:none; }
+  select { min-width:220px; }
+  a.btn:hover, button:hover { border-color:var(--acc); }
+  .langs { display:flex; gap:4px; }
+  .langs button.on { background:var(--acc); color:#04283a; border-color:var(--acc); }
+  main { padding:20px; max-width:1400px; margin:0 auto; }
+  .cards { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .card .k { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.04em; }
+  .card .v { font-size:22px; font-weight:600; margin-top:4px; }
+  .card .s { font-size:11px; color:var(--mut); margin-top:2px; }
+  .card .v.acc { color:var(--acc); }
+  .card .v.acc2 { color:var(--acc2); }
+  section { margin-top:22px; background:var(--panel); border:1px solid var(--line);
+            border-radius:12px; padding:16px; }
+  section h2 { font-size:13px; margin:0 0 4px; font-weight:600; }
+  section .sub { font-size:11px; color:var(--mut); margin-bottom:12px; }
+  .charts { display:grid; gap:18px; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); }
+  svg { width:100%; height:auto; display:block; overflow:visible; }
+  svg text { fill:var(--mut); font-size:10px; }
+  svg text.val { fill:var(--txt); }
+  .bar { fill:var(--acc); }
+  .bar.alt { fill:var(--acc2); }
+  .bar:hover { fill:var(--good); }
+  .axis { stroke:var(--line); stroke-width:1; }
+  .note { color:var(--mut); font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:500; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:hover td { background:#16202e; }
+  a { color:var(--acc); }
+  .empty { padding:40px; text-align:center; color:var(--mut); }
+  @media (max-width:640px) { main { padding:12px; } .charts { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="h-title">Աճուրդների վիճակագրություն</h1>
+  <select id="region"></select>
+  <label class="note"><input type="checkbox" id="openOnly" checked> <span id="l-open"></span></label>
+  <span class="grow"></span>
+  <div class="langs">
+    <button data-lang="hy">ՀՅ</button><button data-lang="en">EN</button><button data-lang="ru">РУ</button>
+  </div>
+  <a class="btn" id="back" href="index.html">← <span id="l-map"></span></a>
+</header>
+
+<main id="main"><p class="empty" id="status">…</p></main>
+
+<script>
+const API = "https://cadastre-worker.ecadaster.workers.dev";
+
+const I18N = {
+  hy: { title:"Աճուրդների վիճակագրություն", map:"Քարտեզ", open:"Միայն բաց աճուրդները",
+        all:"Բոլորը", lots:"Լոտեր", withCode:"Ծածկագրով", withArea:"Մակերեսով",
+        totalValue:"Ընդհանուր մեկնարկային արժեք", priceMin:"Նվազագույն գին",
+        priceMed:"Միջին (մեդիան) գին", priceMax:"Առավելագույն գին",
+        sqmAvg:"Միջին ֏/մ²", sqmMin:"Նվազագույն ֏/մ²", sqmMax:"Առավելագույն ֏/մ²",
+        sqmMed:"Մեդիան ֏/մ²", hSqm:"֏/մ² բաշխում", hSqmSub:"Ըստ կադաստրի պաշտոնական մակերեսի",
+        hPrice:"Մեկնարկային գների բաշխում", hPriceSub:"Բոլոր լոտերը, որոնց գինը հայտնի է",
+        byCommunity:"Լոտերն ըստ համայնքի", byCommunitySub:"Կազմակերպիչ համայնքը",
+        timeline:"Ավարտները՝ ըստ շաբաթների", timelineSub:"Քանի աճուրդ է ավարտվում",
+        cheapest:"Ամենաէժանը 1 մ²-ի հաշվով", lot:"Լոտ", area:"Մակերես", price:"Գին",
+        perSqm:"֏/մ²", organizer:"Կազմակերպիչ", ends:"Ավարտ",
+        none:"Այս ընտրության համար լոտեր չկան։", loading:"Բեռնվում է…",
+        noArea:"Մակերեսները դեռ ստացված չեն կադաստրից — ֏/մ² բաժինները դատարկ են։",
+        lotsShort:"լոտ", weekOf:"շաբ." },
+  en: { title:"Auction statistics", map:"Map", open:"Open auctions only",
+        all:"All", lots:"Lots", withCode:"With code", withArea:"With area",
+        totalValue:"Total starting value", priceMin:"Lowest price",
+        priceMed:"Median price", priceMax:"Highest price",
+        sqmAvg:"Average ֏/m²", sqmMin:"Lowest ֏/m²", sqmMax:"Highest ֏/m²",
+        sqmMed:"Median ֏/m²", hSqm:"֏/m² distribution", hSqmSub:"Using the cadastre's official area",
+        hPrice:"Starting price distribution", hPriceSub:"Every lot with a known price",
+        byCommunity:"Lots per community", byCommunitySub:"By organising community",
+        timeline:"Deadlines by week", timelineSub:"How many auctions end",
+        cheapest:"Cheapest per m²", lot:"Lot", area:"Area", price:"Price",
+        perSqm:"֏/m²", organizer:"Organizer", ends:"Ends",
+        none:"No lots for this selection.", loading:"Loading…",
+        noArea:"Areas not fetched from the cadastre yet — the ֏/m² panels are empty.",
+        lotsShort:"lots", weekOf:"wk" },
+  ru: { title:"Статистика аукционов", map:"Карта", open:"Только открытые аукционы",
+        all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью",
+        totalValue:"Общая стартовая стоимость", priceMin:"Минимальная цена",
+        priceMed:"Медианная цена", priceMax:"Максимальная цена",
+        sqmAvg:"Средняя ֏/м²", sqmMin:"Минимальная ֏/м²", sqmMax:"Максимальная ֏/м²",
+        sqmMed:"Медианная ֏/м²", hSqm:"Распределение ֏/м²", hSqmSub:"По официальной площади кадастра",
+        hPrice:"Распределение стартовых цен", hPriceSub:"Все лоты с известной ценой",
+        byCommunity:"Лоты по общинам", byCommunitySub:"По организующей общине",
+        timeline:"Окончания по неделям", timelineSub:"Сколько аукционов завершается",
+        cheapest:"Самые дешёвые за м²", lot:"Лот", area:"Площадь", price:"Цена",
+        perSqm:"֏/м²", organizer:"Организатор", ends:"Окончание",
+        none:"Нет лотов для этого выбора.", loading:"Загрузка…",
+        noArea:"Площади ещё не получены из кадастра — панели ֏/м² пусты.",
+        lotsShort:"лотов", weekOf:"нед." },
+};
+
+const qs = new URLSearchParams(location.search);
+let LANG = qs.get("lang") || localStorage.getItem("lang") || "hy";
+if (!I18N[LANG]) LANG = "hy";
+const t = (k) => (I18N[LANG] || I18N.hy)[k] ?? k;
+const place = (hy) => placeIn(hy, LANG);
+
+let LOTS = [];
+
+// ---- formatting ---------------------------------------------------------
+const nf = () => new Intl.NumberFormat(LANG === "ru" ? "ru-RU" : LANG === "en" ? "en-US" : "hy-AM");
+const money = (n) => n == null ? "—" : nf().format(Math.round(n)) + "֏";
+const short = (n) => {
+  if (n == null) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e9) return (n / 1e9).toFixed(1) + "B֏";
+  if (a >= 1e6) return (n / 1e6).toFixed(1) + "M֏";
+  if (a >= 1e3) return Math.round(n / 1e3) + "K֏";
+  return Math.round(n) + "֏";
+};
+const areaFmt = (m2) => m2 == null ? "—"
+  : m2 >= 10000 ? (m2 / 10000).toFixed(2) + " ha" : Math.round(m2) + " m²";
+
+// ---- statistics ---------------------------------------------------------
+const median = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/** Equal-width histogram; returns [{from,to,n}] plus the values it binned. */
+function histogram(values, bins = 12) {
+  const xs = values.filter(Number.isFinite);
+  if (!xs.length) return [];
+  const lo = Math.min(...xs), hi = Math.max(...xs);
+  if (hi === lo) return [{ from: lo, to: hi, n: xs.length }];
+  const w = (hi - lo) / bins;
+  const out = Array.from({ length: bins }, (_, i) => ({ from: lo + i * w, to: lo + (i + 1) * w, n: 0 }));
+  for (const x of xs) out[Math.min(bins - 1, Math.floor((x - lo) / w))].n++;
+  return out;
+}
+
+/** Monday of the week a date falls in, as YYYY-MM-DD. */
+function weekStart(iso) {
+  const d = new Date(String(iso).replace(" ", "T"));
+  if (isNaN(d)) return null;
+  const day = (d.getDay() + 6) % 7;                 // Monday = 0
+  d.setDate(d.getDate() - day);
+  return d.toISOString().slice(0, 10);
+}
+
+function selected() {
+  const v = document.getElementById("region").value;
+  const openOnly = document.getElementById("openOnly").checked;
+  let rows = LOTS;
+  if (openOnly) rows = rows.filter(a => !a.endsAt || Date.parse(String(a.endsAt).replace(" ", "T")) > Date.now());
+  if (v) {
+    const wanted = v.startsWith("marz:") ? [v.slice(5), ...(MARZ[v.slice(5)] || [])] : [v];
+    rows = rows.filter(a => {
+      const hay = `${a.organizer || ""} ${a.region || ""} ${a.title || ""}`;
+      return wanted.some(w => hay.includes(w));
+    });
+  }
+  return rows;
+}
+
+// ---- tiny SVG chart helpers (no libraries) ------------------------------
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+/** Vertical bars with a value on top and a rotated label underneath. */
+function barChart(items, { alt = false, fmtV = (n) => n, height = 190 } = {}) {
+  if (!items.length) return `<p class="note">—</p>`;
+  const W = Math.max(360, items.length * 46), H = height, padB = 46, padT = 18, padL = 8;
+  const max = Math.max(...items.map(i => i.v), 1);
+  const bw = (W - padL * 2) / items.length;
+  const bars = items.map((it, i) => {
+    const h = Math.max(1, (H - padT - padB) * it.v / max);
+    const x = padL + i * bw, y = H - padB - h;
+    return `<rect class="bar${alt ? " alt" : ""}" x="${x + bw * 0.15}" y="${y}"
+              width="${bw * 0.7}" height="${h}" rx="3"><title>${esc(it.label)}: ${esc(fmtV(it.v))}</title></rect>
+      <text class="val" x="${x + bw / 2}" y="${y - 5}" text-anchor="middle">${esc(fmtV(it.v))}</text>
+      <text x="${x + bw / 2}" y="${H - padB + 12}" text-anchor="end"
+            transform="rotate(-35 ${x + bw / 2} ${H - padB + 12})">${esc(it.label)}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+    <line class="axis" x1="${padL}" y1="${H - padB}" x2="${W - padL}" y2="${H - padB}"/>${bars}</svg>`;
+}
+
+function histChart(bins, fmt) {
+  return barChart(
+    bins.map(b => ({ label: fmt(b.from), v: b.n })),
+    { fmtV: (n) => n || "" });
+}
+
+// ---- render -------------------------------------------------------------
+function render() {
+  const rows = selected();
+  const main = document.getElementById("main");
+  if (!rows.length) { main.innerHTML = `<p class="empty">${t("none")}</p>`; return; }
+
+  const prices = rows.map(a => a.priceStart).filter(Number.isFinite);
+  const withArea = rows.filter(a => Number.isFinite(a.area) && a.area > 0 && Number.isFinite(a.priceStart));
+  const sqm = withArea.map(a => a.priceStart / a.area);
+  const coded = rows.filter(a => a.code).length;
+
+  const byCommunity = {};
+  for (const a of rows) {
+    const key = String(a.organizer || "—").replace(/\s+համայնք$/u, "");
+    byCommunity[key] = (byCommunity[key] || 0) + 1;
+  }
+  const communities = Object.entries(byCommunity)
+    .sort((a, b) => b[1] - a[1]).slice(0, 14)
+    .map(([k, v]) => ({ label: place(k), v }));
+
+  const byWeek = {};
+  for (const a of rows) {
+    const w = a.endsAt ? weekStart(a.endsAt) : null;
+    if (w) byWeek[w] = (byWeek[w] || 0) + 1;
+  }
+  const weeks = Object.entries(byWeek).sort().slice(0, 16)
+    .map(([k, v]) => ({ label: k.slice(5), v }));
+
+  const cheapest = withArea.map(a => ({ ...a, sqm: a.priceStart / a.area }))
+    .sort((x, y) => x.sqm - y.sqm).slice(0, 12);
+
+  const card = (k, v, cls = "", s = "") =>
+    `<div class="card"><div class="k">${k}</div><div class="v ${cls}">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
+
+  main.innerHTML = `
+    <div class="cards">
+      ${card(t("lots"), rows.length,
+             "", `${t("withCode")}: ${coded} · ${t("withArea")}: ${withArea.length}`)}
+      ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc")}
+      ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
+      ${card(t("priceMed"), money(median(prices)))}
+      ${card(t("priceMax"), money(prices.length ? Math.max(...prices) : null))}
+      ${card(t("sqmAvg"), money(sqm.length ? sqm.reduce((s, n) => s + n, 0) / sqm.length : null), "acc2")}
+      ${card(t("sqmMed"), money(median(sqm)), "acc2")}
+      ${card(t("sqmMin"), money(sqm.length ? Math.min(...sqm) : null), "acc2")}
+      ${card(t("sqmMax"), money(sqm.length ? Math.max(...sqm) : null), "acc2")}
+    </div>
+
+    ${sqm.length ? "" : `<section><p class="note">${t("noArea")}</p></section>`}
+
+    <div class="charts">
+      <section>
+        <h2>${t("hSqm")}</h2><div class="sub">${t("hSqmSub")} · ${sqm.length} ${t("lotsShort")}</div>
+        ${sqm.length ? histChart(histogram(sqm, 10), (v) => short(v)) : `<p class="note">—</p>`}
+      </section>
+      <section>
+        <h2>${t("hPrice")}</h2><div class="sub">${t("hPriceSub")} · ${prices.length} ${t("lotsShort")}</div>
+        ${prices.length ? histChart(histogram(prices, 10), (v) => short(v)) : `<p class="note">—</p>`}
+      </section>
+      <section>
+        <h2>${t("byCommunity")}</h2><div class="sub">${t("byCommunitySub")}</div>
+        ${barChart(communities)}
+      </section>
+      <section>
+        <h2>${t("timeline")}</h2><div class="sub">${t("timelineSub")}</div>
+        ${barChart(weeks, { alt: true })}
+      </section>
+    </div>
+
+    ${cheapest.length ? `<section>
+      <h2>${t("cheapest")}</h2><div class="sub">${t("perSqm")}</div>
+      <table>
+        <tr><th>${t("lot")}</th><th>${t("organizer")}</th>
+            <th class="n">${t("area")}</th><th class="n">${t("price")}</th>
+            <th class="n">${t("perSqm")}</th><th>${t("ends")}</th></tr>
+        ${cheapest.map(a => `<tr>
+          <td><a href="${a.url}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
+          <td>${esc(place(String(a.organizer || "").replace(/\\s+համայնք$/u, "")))}</td>
+          <td class="n">${areaFmt(a.area)}</td>
+          <td class="n">${money(a.priceStart)}</td>
+          <td class="n">${money(a.sqm)}</td>
+          <td>${esc(String(a.endsAt || "").slice(0, 10) || "—")}</td>
+        </tr>`).join("")}
+      </table>
+    </section>` : ""}
+  `;
+}
+
+// ---- chrome -------------------------------------------------------------
+function buildRegions() {
+  const sel = document.getElementById("region");
+  const keep = sel.value || qs.get("region") || "";
+  sel.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = ""; all.textContent = t("all");
+  sel.appendChild(all);
+  for (const [marz, list] of Object.entries(MARZ)) {
+    const g = document.createElement("optgroup");
+    g.label = place(marz);
+    const whole = document.createElement("option");
+    whole.value = "marz:" + marz;
+    whole.textContent = place(marz) + " — " + t("all");
+    g.appendChild(whole);
+    for (const c of list) {
+      const o = document.createElement("option");
+      o.value = c; o.textContent = place(c);
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  sel.value = keep;
+}
+
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.title = t("title");
+  document.getElementById("h-title").textContent = t("title");
+  document.getElementById("l-open").textContent = t("open");
+  document.getElementById("l-map").textContent = t("map");
+  for (const b of document.querySelectorAll(".langs button"))
+    b.classList.toggle("on", b.dataset.lang === LANG);
+  buildRegions();
+}
+
+function syncUrl() {
+  const p = new URLSearchParams();
+  const r = document.getElementById("region").value;
+  if (r) p.set("region", r);
+  p.set("lang", LANG);
+  history.replaceState(null, "", "?" + p.toString());
+  document.getElementById("back").href = "index.html?lang=" + LANG;
+}
+
+async function boot() {
+  applyLang();
+  document.getElementById("region").value = qs.get("region") || "";
+  for (const b of document.querySelectorAll(".langs button"))
+    b.onclick = () => { LANG = b.dataset.lang; localStorage.setItem("lang", LANG);
+                        applyLang(); syncUrl(); render(); };
+  document.getElementById("region").onchange = () => { syncUrl(); render(); };
+  document.getElementById("openOnly").onchange = render;
+
+  document.getElementById("status").textContent = t("loading");
+  try {
+    const r = await fetch(API + "/auctions?limit=1000");
+    LOTS = await r.json();
+  } catch { LOTS = []; }
+  syncUrl();
+  render();
+}
+boot();
+</script>
+</body>
+</html>
