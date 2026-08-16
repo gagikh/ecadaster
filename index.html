@@ -997,6 +997,23 @@ async function pickAuction(a, el) {
   try { await focusAuction(a); } finally { await shown; el.classList.remove("busy"); }
 }
 
+// Outlines, cheapest source first:
+//   1. the ring stored with the lot (cadastre or a previous trace)
+//   2. this browser's own cache of earlier traces
+//   3. a live /parcel lookup, then raster tracing — seconds, so last resort
+const RING_KEY = "rings.v1";
+const ringCache = (() => {
+  try { return JSON.parse(localStorage.getItem(RING_KEY) || "{}"); } catch { return {}; }
+})();
+function rememberRing(code, ring) {
+  try {
+    ringCache[code] = ring;
+    const keys = Object.keys(ringCache);
+    if (keys.length > 400) delete ringCache[keys[0]];      // keep it bounded
+    localStorage.setItem(RING_KEY, JSON.stringify(ringCache));
+  } catch { /* private mode, quota — the cache is optional */ }
+}
+
 async function focusAuction(a) {
   if (!a.code) {                       // nothing to draw — open the lot instead
     aStatus(t("aNoCode"));
@@ -1006,6 +1023,18 @@ async function focusAuction(a) {
 
   let layer = drawn.get(a.code);
   if (!layer) {
+    // Already known? Draw immediately, no network at all.
+    const known = (a.ring && a.ring.length >= 3) ? a.ring
+                : (a.geom ? (() => { try { return JSON.parse(a.geom); } catch { return null; } })() : null)
+                || ringCache[a.code];
+    if (known && known.length >= 3) {
+      layer = L.polygon(known, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
+                                 fillOpacity: opacityVal() });
+      layer.bindPopup(auctionPopup(a, { area: a.area }));
+      layer.addTo(auctionLayer);
+      drawn.set(a.code, layer);
+      aStatus("");
+    } else {
     aStatus(t("aLoading"));
     try {
       const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code)).then(r => r.json());
@@ -1023,8 +1052,10 @@ async function focusAuction(a) {
       layer.bindPopup(auctionPopup(a, res));
       layer.addTo(auctionLayer);
       drawn.set(a.code, layer);
+      if (coords.length >= 3) rememberRing(a.code, coords);   // next click is instant
       aStatus("");
     } catch (e) { aStatus(t("aNoGeom")); return; }
+    }
   }
 
   const b = layer.getBounds ? layer.getBounds() : L.latLngBounds([layer.getLatLng(), layer.getLatLng()]).pad(0.002);
