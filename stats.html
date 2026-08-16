@@ -73,7 +73,7 @@ const API = "https://cadastre-worker.ecadaster.workers.dev";
 
 const I18N = {
   hy: { title:"Աճուրդների վիճակագրություն", map:"Քարտեզ", open:"Միայն բաց աճուրդները",
-        all:"Բոլորը", lots:"Լոտեր", withCode:"Ծածկագրով", withArea:"Մակերեսով",
+        all:"Բոլորը", lots:"Լոտեր", withCode:"Ծածկագրով", withArea:"Մակերեսով (կադաստրից)",
         totalValue:"Ընդհանուր մեկնարկային արժեք", priceMin:"Նվազագույն գին",
         priceMed:"Միջին (մեդիան) գին", priceMax:"Առավելագույն գին",
         sqmAvg:"Միջին ֏/մ²", sqmMin:"Նվազագույն ֏/մ²", sqmMax:"Առավելագույն ֏/մ²",
@@ -87,7 +87,7 @@ const I18N = {
         noArea:"Մակերեսները դեռ ստացված չեն կադաստրից — ֏/մ² բաժինները դատարկ են։",
         lotsShort:"լոտ", weekOf:"շաբ." },
   en: { title:"Auction statistics", map:"Map", open:"Open auctions only",
-        all:"All", lots:"Lots", withCode:"With code", withArea:"With area",
+        all:"All", lots:"Lots", withCode:"With code", withArea:"With area (from cadastre)",
         totalValue:"Total starting value", priceMin:"Lowest price",
         priceMed:"Median price", priceMax:"Highest price",
         sqmAvg:"Average ֏/m²", sqmMin:"Lowest ֏/m²", sqmMax:"Highest ֏/m²",
@@ -101,7 +101,7 @@ const I18N = {
         noArea:"Areas not fetched from the cadastre yet — the ֏/m² panels are empty.",
         lotsShort:"lots", weekOf:"wk" },
   ru: { title:"Статистика аукционов", map:"Карта", open:"Только открытые аукционы",
-        all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью",
+        all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью (из кадастра)",
         totalValue:"Общая стартовая стоимость", priceMin:"Минимальная цена",
         priceMed:"Медианная цена", priceMax:"Максимальная цена",
         sqmAvg:"Средняя ֏/м²", sqmMin:"Минимальная ֏/м²", sqmMax:"Максимальная ֏/м²",
@@ -254,8 +254,8 @@ function render() {
 
   main.innerHTML = `
     <div class="cards">
-      ${card(t("lots"), rows.length,
-             "", `${t("withCode")}: ${coded} · ${t("withArea")}: ${withArea.length}`)}
+      ${card(t("lots"), rows.length, "",
+             `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withArea.length}/${coded}`)}
       ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc",
              `${money(prices.reduce((s, n) => s + n, 0))} · ${prices.length} ${t("lotsShort")}`)}
       ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
