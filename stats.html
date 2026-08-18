@@ -361,7 +361,11 @@ const FRAMED = (() => { try { return window.top !== window.self; } catch { retur
 async function boot() {
   applyLang();
   if (FRAMED) {
-    document.getElementById("back").hidden = true;
+    // Keep a visible way back — hiding it left the frame with no exit of its
+    // own. Inside the overlay it closes the overlay rather than navigating.
+    const back = document.getElementById("back");
+    back.href = "#";
+    back.onclick = (e) => { e.preventDefault(); parent.postMessage("ecadaster:close-stats", "*"); };
     document.querySelector("header").style.padding = "10px 12px";
   }
   document.getElementById("region").value = qs.get("region") || "";

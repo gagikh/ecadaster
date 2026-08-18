@@ -1186,19 +1186,33 @@ function syncStatsLink() {
 
 // The map control stays a real link — middle-click and long-press still open a
 // tab — but a plain click shows the charts over the map instead of leaving it.
+const statsOpen = () => !document.getElementById("statsWrap").hidden;
+
 function openStats() {
   const wrap = document.getElementById("statsWrap");
-  const frame = document.getElementById("statsFrame");
   syncStatsLink();
-  frame.src = statsUrl();
+  document.getElementById("statsFrame").src = statsUrl();
   wrap.hidden = false;
+  // A history entry so the phone's Back button closes the overlay instead of
+  // leaving the site — that is the button people actually reach for.
+  try { history.pushState({ stats: 1 }, "", location.href); } catch (e) {}
 }
-function closeStats() {
-  const wrap = document.getElementById("statsWrap");
-  wrap.hidden = true;
+
+function closeStats(fromHistory) {
+  if (!statsOpen()) return;
+  document.getElementById("statsWrap").hidden = true;
   document.getElementById("statsFrame").src = "about:blank";   // stop its timers
   map.invalidateSize();
+  // Pressing ✕ should also consume the history entry openStats pushed.
+  if (!fromHistory && history.state && history.state.stats) {
+    try { history.back(); } catch (e) {}
+  }
 }
+
+// stats.html asks the map page to close it (its own "← Քարտեզ" when framed).
+window.addEventListener("message", (e) => {
+  if (e.data === "ecadaster:close-stats") closeStats();
+});
 document.getElementById("a-region").addEventListener("change", syncStatsLink);
 document.getElementById("statsClose").onclick = closeStats;
 document.addEventListener("keydown", (e) => {
@@ -1291,7 +1305,10 @@ async function boot() {
   };
   await restore();
   map.on("moveend", syncURL);
-  window.addEventListener("popstate", restore);
+  window.addEventListener("popstate", () => {
+    if (statsOpen()) { closeStats(true); return; }   // Back closes the overlay
+    restore();
+  });
 }
 boot();
 </script>
