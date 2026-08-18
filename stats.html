@@ -354,8 +354,16 @@ function syncUrl() {
   document.getElementById("back").href = "index.html?lang=" + LANG;
 }
 
+// Inside the map page's overlay the "← Map" button would load index.html into
+// the frame — a map inside a map. The overlay has its own ✕, so hide it.
+const FRAMED = (() => { try { return window.top !== window.self; } catch { return true; } })();
+
 async function boot() {
   applyLang();
+  if (FRAMED) {
+    document.getElementById("back").hidden = true;
+    document.querySelector("header").style.padding = "10px 12px";
+  }
   document.getElementById("region").value = qs.get("region") || "";
   for (const b of document.querySelectorAll(".langs button"))
     b.onclick = () => { LANG = b.dataset.lang; localStorage.setItem("lang", LANG);
