@@ -96,6 +96,14 @@
     .panel:not(.half):not(.full) #panelBody > *:not(.tabs) { display:none; }
     .panel .tabs { position:sticky; top:0; background:var(--panel); z-index:2; margin-top:0; }
     .tab { padding:12px 6px; font-size:14px; }         /* ≥44px touch target */
+    /* iOS zooms the page when a focused control is under 16px */
+    select, input[type=text], textarea { font-size:16px; }
+    select, .row button { min-height:44px; }
+    .chk { padding:6px 0; }                             /* easier checkbox rows */
+    .acard { padding:11px 12px; }                       /* bigger tap area */
+    .acard .t { font-size:13px; }
+    .acard .go { padding:8px 10px; margin:-8px -8px -8px 0; font-size:16px; }
+    .acard.busy::after { width:22px; height:22px; margin:-11px 0 0 -11px; }
     .panel-toggle { display:none; }
     .leaflet-bottom { bottom:82px; }                    /* keep controls clear */
   }
@@ -522,7 +530,12 @@ function renderMeasurements() {
   areaGroup.clearLayers(); lenGroup.clearLayers();
   const showArea = document.getElementById("show-area").checked;
   const showLen  = document.getElementById("show-len").checked;
-  plotted.filter(p => p.ok && p.isPoly).forEach(p => {
+  // Plotted codes and drawn auction parcels are labelled alike; both carry
+  // {coords, area, isPoly, layer}.
+  const auctionParcels = typeof drawn === "undefined" ? []
+    : [...drawn.values()].filter(p => p && p.isPoly && p.coords);
+  const targets = [...plotted.filter(p => p.ok && p.isPoly), ...auctionParcels];
+  targets.forEach(p => {
     if (showArea) {
       const c = p.layer.getBounds ? p.layer.getBounds().getCenter() : p.layer.getLatLng();
       L.marker(c, { interactive:false,
@@ -583,7 +596,7 @@ async function plotAll(skipFit = false) {
       const p = { code, coords, layer, ok:true, color, isPoly, traced,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
                   perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
-      layer.bindPopup(popupHtml(p));
+      layer.bindPopup(popupHtml(p), popupOpts());
       plotted.push(p);
       allBounds.push(isPoly ? layer.getBounds() : L.latLngBounds([coords[0], coords[0]]).pad(0.002));
     } catch (err) {
@@ -987,7 +1000,17 @@ const aStatusHasMsg = () => !!document.getElementById("aStatus").textContent;
 // Draw the auctioned parcel from its cadastral code — same pipeline as the
 // codes tab (/parcel, with boundary tracing), in the auction colour.
 const AUCTION_COLOR = "#f59e0b";
-const drawn = new Map();                       // code -> layer
+
+// A popup auto-pans within the map viewport, which on a phone extends under the
+// bottom sheet — without this the content opens where it cannot be read.
+const popupOpts = () => isPhone()
+  ? { autoPanPaddingTopLeft: L.point(12, 60),
+      autoPanPaddingBottomRight: L.point(12, Math.round(window.innerHeight * 0.45) + 20),
+      maxWidth: Math.min(300, window.innerWidth - 40) }
+  : { maxWidth: 340 };
+// code -> { layer, coords, area, isPoly } — the geometry is kept so the
+// Measurements checkboxes can label auction parcels the same as plotted codes.
+const drawn = new Map();
 
 // Wraps focusAuction so the clicked card shows a spinner while we look the
 // parcel up — the cadastre round-trip plus tracing takes a few seconds.
@@ -1025,7 +1048,7 @@ async function focusAuction(a) {
     return;
   }
 
-  let layer = drawn.get(a.code);
+  let layer = (drawn.get(a.code) || {}).layer;
   if (!layer) {
     // Already known? Draw immediately, no network at all.
     const known = (a.ring && a.ring.length >= 3) ? a.ring
@@ -1034,9 +1057,10 @@ async function focusAuction(a) {
     if (known && known.length >= 3) {
       layer = L.polygon(known, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
                                  fillOpacity: opacityVal() });
-      layer.bindPopup(auctionPopup(a, { area: a.area }));
+      layer.bindPopup(auctionPopup(a, { area: a.area }), popupOpts());
       layer.addTo(auctionLayer);
-      drawn.set(a.code, layer);
+      drawn.set(a.code, { layer, coords: known, area: a.area, isPoly: true });
+      renderMeasurements();
       aStatus("");
     } else {
     aStatus(t("aLoading"));
@@ -1053,9 +1077,11 @@ async function focusAuction(a) {
                               fillOpacity: opacityVal(), dashArray: traced ? "6 4" : null })
         : L.circleMarker(coords[0], { radius: 9, color: AUCTION_COLOR, weight: 3,
                               fillColor: AUCTION_COLOR, fillOpacity: 0.9 });
-      layer.bindPopup(auctionPopup(a, res));
+      layer.bindPopup(auctionPopup(a, res), popupOpts());
       layer.addTo(auctionLayer);
-      drawn.set(a.code, layer);
+      drawn.set(a.code, { layer, coords, area: res.area ?? a.area,
+                          isPoly: coords.length >= 3 });
+      renderMeasurements();
       if (coords.length >= 3) rememberRing(a.code, coords);   // next click is instant
       aStatus("");
     } catch (e) { aStatus(t("aNoGeom")); return; }
@@ -1063,9 +1089,20 @@ async function focusAuction(a) {
   }
 
   const b = layer.getBounds ? layer.getBounds() : L.latLngBounds([layer.getLatLng(), layer.getLatLng()]).pad(0.002);
-  map.fitBounds(b, { maxZoom: 18, padding: [40, 40] });
+
+  if (isPhone()) {
+    // Half, not peek: the map is visible and the list is still there to pick
+    // the next lot from. Wait for the sheet transition before fitting, or the
+    // parcel lands under it.
+    sheet("half");
+    await new Promise(r => setTimeout(r, 260));
+    const hidden = panelEl.getBoundingClientRect().height;   // sheet covers this much
+    map.fitBounds(b, { maxZoom: 18,
+      paddingTopLeft: [24, 24], paddingBottomRight: [24, hidden + 24] });
+  } else {
+    map.fitBounds(b, { maxZoom: 18, padding: [40, 40] });
+  }
   layer.openPopup();
-  if (isPhone()) sheet("peek");
 }
 
 function auctionPopup(a, parcel) {
@@ -1094,6 +1131,7 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-view").checked = false;
   auctionLayer.clearLayers();
   drawn.clear();
+  renderMeasurements();                 // drop their area / length labels
   document.getElementById("aList").innerHTML = "";
   aStatus("");
 };
