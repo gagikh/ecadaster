@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-15-2350">
+<meta name="build" content="2026-08-19-phases">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -61,6 +61,12 @@
   .acard .c { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--acc); margin-top:3px; }
   .acard .c.nc { font-family:inherit; color:var(--mut); font-style:italic; }
   .acard.nocode { opacity:.72; }
+  /* Status lives in the title colour: bidding now, open, closed. The list is
+     grouped in the same order, so colour and position always agree. */
+  .acard.ph-current  .t { color:#34d399; }
+  .acard.ph-upcoming .t { color:#fbbf24; }
+  .acard.ph-finished .t { color:#f87171; }
+  .acard.ph-finished { opacity:.7; }
   .acard .m { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--mut); margin-top:4px; }
   .acard .m .lbl { opacity:.7; }
   .acard .m .amt { color:var(--txt); }
@@ -961,7 +967,9 @@ async function loadAuctions(force) {
   if (AUCTIONS && !force) return AUCTIONS;
   aStatus(t("aLoading"));
   try {
-    const r = await fetch(API + "/auctions?open=1");
+    // open=0 means "no status filter" — finished lots are wanted here, since
+    // the list shows them as a red group. The checkbox hides them client-side.
+    const r = await fetch(API + "/auctions?open=0");
     if (!r.ok) throw new Error(String(r.status));
     AUCTIONS = await r.json();
     aStatus("");
@@ -977,6 +985,17 @@ async function loadAuctions(force) {
 const amount = (label, v, cls = "") => v == null ? "" :
   `<span><span class="lbl">${label}</span> <span class="amt ${cls}">${fmtPrice(v)}</span></span>`;
 
+// One verdict per lot, used by the colour, the grouping and the "open only"
+// filter alike — three copies of this rule would drift and put a green card in
+// the finished group. statusCode is the crawler's, but a deadline already past
+// wins: that row may simply not have been re-read since it expired.
+const PHASE_RANK = { current: 0, upcoming: 1, finished: 2 };
+function phaseOf(a) {
+  const d = daysLeft(a.endsAt);
+  if (a.statusCode === 2 || (d != null && d < 0)) return "finished";
+  return a.statusCode === 1 ? "current" : "upcoming";
+}
+
 function renderAuctions() {
   const list = document.getElementById("aList");
   const region = document.getElementById("a-region").value;
@@ -985,7 +1004,7 @@ function renderAuctions() {
   const b = map.getBounds();
 
   let rows = AUCTIONS || [];
-  if (openOnly) rows = rows.filter(a => { const d = daysLeft(a.endsAt); return d == null || d >= 0; });
+  if (openOnly) rows = rows.filter(a => phaseOf(a) !== "finished");
   // matchRegion (regions.js) keys off the cadastral code's marz digits and
   // falls back to case-insensitive text — see the notes there.
   if (region) rows = rows.filter(a => matchRegion(a, region));
@@ -994,11 +1013,15 @@ function renderAuctions() {
     rows = located.filter(a => b.contains([a.lat, a.lng]));
     if (!located.length) aStatus(t("aNoGeo"));       // nothing geocoded yet
   }
-  // Sorted by cadastral code, so parcels in the same block sit together;
-  // lots without a code go last, ordered by deadline. Compare the digits
-  // only — localeCompare treats "-" as ignorable punctuation in some locales.
+  // Grouped by phase — bidding now, then open, then closed — and inside each
+  // group by cadastral code, so parcels in the same block sit together. Lots
+  // without a code go last within their group, ordered by deadline. Compare the
+  // digits only: localeCompare treats "-" as ignorable punctuation in some
+  // locales, which interleaves blocks.
   const codeKey = (c) => String(c || "").replace(/\D+/g, "");
   rows = rows.slice().sort((x, y) => {
+    const px = PHASE_RANK[phaseOf(x)], py = PHASE_RANK[phaseOf(y)];
+    if (px !== py) return px - py;
     const a = codeKey(x.code), b = codeKey(y.code);
     if (!a !== !b) return a ? -1 : 1;
     if (a !== b) return a < b ? -1 : 1;
@@ -1008,16 +1031,21 @@ function renderAuctions() {
   list.innerHTML = rows.length ? "" : (AUCTIONS && AUCTIONS.length === 0 && !aStatusHasMsg() ? `<p class="hint">${t("aNone")}</p>` : "");
   for (const a of rows) {
     const d = daysLeft(a.endsAt);
+    const ph = phaseOf(a);
     const el = document.createElement("div");
-    el.className = "acard" + (a.code ? "" : " nocode");
+    el.className = "acard ph-" + ph + (a.code ? "" : " nocode");
     el.innerHTML = `<div class="t">${a.title || ""}</div>` +
       (a.code ? `<div class="c">${a.code}</div>`
               : `<div class="c nc">${t("aNoCodeTag")}</div>`) +
       `<div class="m">` +
       amount(t("aPriceStart"), a.priceStart, "start") +
       amount(t("aDeposit"), a.deposit) +
-      (d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
-          d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>`
+      // A closed lot gets its end date, never a countdown — "today" on an
+      // auction that ended last month reads as a live deadline.
+      (ph === "finished"
+        ? `<span><span class="lbl">${t("aEnds")}</span> ${String(a.endsAt || "").slice(0, 10)}</span>`
+        : d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
+            d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>`
         : a.startsAt ? `<span><span class="lbl">${t("aStarts")}</span> ${
             String(a.startsAt).slice(0, 16)}</span>` : "") +
       `<span class="who">${org(a.organizer)}</span>` +
