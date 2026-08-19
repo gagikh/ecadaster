@@ -598,9 +598,26 @@ function renderLegend() {
   });
 }
 
+// Codes arrive pasted from documents and web pages, so they come wrapped in
+// punctuation: "02-058-0322-0095/", quotes, a trailing full stop, a bullet in
+// front. The cadastre matches on the exact string and returns nothing for any
+// of those. Keep the four digit groups and drop whatever surrounds them;
+// typographic dashes are folded onto a hyphen first, since a copied "–" looks
+// identical and fails silently.
+//
+// A token with digits but no valid code — a typo like "02-58-0322-0095" — is
+// kept as typed and reported "not found", because dropping it silently would
+// leave the person wondering which of their codes went missing. A token with
+// no digits at all ("code:", a stray word) is just packaging, and dropped.
+const CODE_RE = /\d{2}-\d{3}-\d{4}-\d{4}/;
+const cleanCode = (s) => {
+  const m = CODE_RE.exec(String(s).replace(/[‐-―−]/g, "-"));
+  return m ? m[0] : String(s).trim();
+};
+const readCodes = (v) => String(v).split(/[\s,;]+/).map(cleanCode).filter(s => s && /\d/.test(s));
+
 async function plotAll(skipFit = false) {
-  const codes = document.getElementById("codes").value
-    .split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
+  const codes = readCodes(document.getElementById("codes").value);
   if (!codes.length) { status(t("enterCode")); return; }
   clearAll();
   status(t("plotting", codes.length));
@@ -661,7 +678,7 @@ document.getElementById("codes").addEventListener("keydown", e => {
 const OV_MAP = [["ov-parcels","parcels"],["ov-plabels","plabels"],["ov-buildings","buildings"]];
 
 function buildShareURL() {
-  const typed = document.getElementById("codes").value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  const typed = readCodes(document.getElementById("codes").value);
   const codes = plotted.length ? plotted.map(p=>p.code) : typed;
   const ov = OV_MAP.filter(([id]) => document.getElementById(id).checked).map(([,k]) => k);
   const c = map.getCenter();
