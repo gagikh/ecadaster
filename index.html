@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-19-phases">
+<meta name="build" content="2026-08-19-trace2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -832,47 +832,86 @@ async function traceBoundary(lat, lng, area) {
     let data; try { data = cx2.getImageData(0, 0, px, px).data; } catch (e) { return null; }
 
     const solid = (i) => data[i*4+3] > 40;        // any drawn pixel = a boundary line
-    const mask = new Uint8Array(px*px);
-    const c0 = (px>>1)*px + (px>>1);
-    if (solid(c0)) { /* centre sits on a line; nudge handled by BFS below */ }
-    const q = [c0]; mask[c0] = 1;
-    let touchedEdge = false, count = 0;
-    while (q.length) {
-      const i = q.pop(); count++;
-      const x = i % px, y = (i / px) | 0;
-      if (x === 0 || y === 0 || x === px-1 || y === px-1) { touchedEdge = true; break; }
-      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-        const j = (y+dy)*px + (x+dx);
-        if (!mask[j] && !solid(j)) { mask[j] = 1; q.push(j); }
-      }
-    }
-    if (touchedEdge || count < 50) continue;      // leaked out — try a wider window
+    const mid = px >> 1;
+    const perPx = (bbox[2] - bbox[0]) / px;       // metres per pixel, both axes
 
-    // Moore-neighbour contour trace
-    let sx = -1, sy = -1;
-    outer: for (let y = 0; y < px; y++) for (let x = 0; x < px; x++)
-      if (mask[y*px+x]) { sx = x; sy = y; break outer; }
-    if (sx < 0) continue;
-    const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-    const ring = []; let cx3 = sx, cy3 = sy, dir = 4, guard = 0;
-    do {
-      ring.push([cx3, cy3]);
-      let moved = false;
-      for (let k = 1; k <= 8; k++) {
-        const nd = (dir + k) % 8;
-        const nx = cx3 + dirs[nd][0], ny = cy3 + dirs[nd][1];
-        if (nx >= 0 && ny >= 0 && nx < px && ny < px && mask[ny*px+nx]) {
-          cx3 = nx; cy3 = ny; dir = (nd + 5) % 8; moved = true; break;
+    // The cadastre's point is not reliably inside the parcel it names. It is
+    // the first vertex of whatever geometry the row holds, which for some
+    // parcels is a CORNER — four cells meet there, and a fill seeded on it
+    // traces a neighbour just as convincingly as the real thing. So try the
+    // point, then a ring of offsets around it, and let the official area say
+    // which cell is actually ours. Same image, no extra requests.
+    const step = Math.max(4, Math.round(Math.sqrt(Math.max(area, 100)) / 4 / perPx));
+    const seeds = [[0, 0]];
+    for (const r of [step, step * 2])
+      for (const [dx, dy] of [[1,1],[-1,1],[-1,-1],[1,-1],[1,0],[0,1],[-1,0],[0,-1]])
+        seeds.push([dx * r, dy * r]);
+
+    const region = new Int32Array(px*px);         // 0 = unvisited, else fill id
+    let fills = 0, best = null, bestErr = Infinity;
+
+    for (const [ox, oy] of seeds) {
+      const sxp = mid + ox, syp = mid + oy;
+      if (sxp <= 0 || syp <= 0 || sxp >= px-1 || syp >= px-1) continue;
+      const seed = syp*px + sxp;
+      if (solid(seed) || region[seed]) continue;  // on a line, or already traced
+      const id = ++fills;
+
+      const q = [seed]; region[seed] = id;
+      let touchedEdge = false, count = 0;
+      while (q.length) {
+        const i = q.pop(); count++;
+        const x = i % px, y = (i / px) | 0;
+        if (x === 0 || y === 0 || x === px-1 || y === px-1) { touchedEdge = true; break; }
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const j = (y+dy)*px + (x+dx);
+          if (!region[j] && !solid(j)) { region[j] = id; q.push(j); }
         }
       }
-      if (!moved) break;
-    } while ((cx3 !== sx || cy3 !== sy) && ++guard < 200000);
-    if (ring.length < 8) continue;
+      if (touchedEdge || count < 50) continue;    // leaked out — try a wider window
 
-    const simple = simplify(ring, 1.2);
-    return simple.map(([x, y]) => fromGk8(
-      bbox[0] + (x / px) * (bbox[2] - bbox[0]),
-      bbox[3] - (y / px) * (bbox[3] - bbox[1])));
+      // Moore-neighbour contour trace of this fill
+      let sx = -1, sy = -1;
+      outer: for (let y = 0; y < px; y++) for (let x = 0; x < px; x++)
+        if (region[y*px+x] === id) { sx = x; sy = y; break outer; }
+      if (sx < 0) continue;
+      const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+      const ring = []; let cx3 = sx, cy3 = sy, dir = 4, guard = 0;
+      do {
+        ring.push([cx3, cy3]);
+        let moved = false;
+        for (let k = 1; k <= 8; k++) {
+          const nd = (dir + k) % 8;
+          const nx = cx3 + dirs[nd][0], ny = cy3 + dirs[nd][1];
+          if (nx >= 0 && ny >= 0 && nx < px && ny < px && region[ny*px+nx] === id) {
+            cx3 = nx; cy3 = ny; dir = (nd + 5) % 8; moved = true; break;
+          }
+        }
+        if (!moved) break;
+      } while ((cx3 !== sx || cy3 !== sy) && ++guard < 200000);
+      if (ring.length < 8) continue;
+
+      const simple = simplify(ring, 1.2);
+      const gk = simple.map(([x, y]) => [
+        bbox[0] + (x / px) * (bbox[2] - bbox[0]),
+        bbox[3] - (y / px) * (bbox[3] - bbox[1])]);
+
+      // The official area is the arbiter. Without it a trace that succeeds on
+      // the wrong cell is indistinguishable from the right one — and a
+      // confidently drawn neighbour is worse than no boundary at all.
+      // Tolerance is wide because the trace follows the inside of a drawn
+      // line, so it reads a little small by construction.
+      if (!(area > 0)) return gk.map(([x, y]) => fromGk8(x, y));
+      let s = 0;
+      for (let i = 0, n = gk.length; i < n; i++) {
+        const [x1, y1] = gk[i], [x2, y2] = gk[(i + 1) % n];
+        s += x1 * y2 - x2 * y1;
+      }
+      const got = Math.abs(s) / 2;
+      const err = Math.abs(Math.log(got / area));           // symmetric in over/under
+      if (got >= area * 0.5 && got <= area * 2 && err < bestErr) { bestErr = err; best = gk; }
+    }
+    if (best) return best.map(([x, y]) => fromGk8(x, y));
   }
   return null;
 }
