@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-21-lotsearch">
+<meta name="build" content="2026-08-21-refresh">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -209,7 +209,7 @@
     <label class="chk"><input type="checkbox" id="a-view">
       <span data-i18n="aInView">In current map view</span></label>
     <div class="row" style="margin-top:8px">
-      <button id="aSearch" style="flex:1" data-i18n="aSearch">Search</button>
+      <button id="aRefresh" style="flex:1" data-i18n="aRefresh">↻ Refresh</button>
       <button id="aClear" style="background:#374151;color:#e5e7eb" data-i18n="clear">Clear</button>
     </div>
     <div id="aStatus" class="status"></div>
@@ -286,7 +286,7 @@ const I18N = {
     aPhaseAll:"Բոլոր աճուրդները",
     aRegionOff:"Քարտեզի տեսանելի հատվածում մարզի ընտրությունը չի կիրառվում։",
     aQueryPh:"Լոտի համար, ծածկագիր կամ հասցե",
-    aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
+    aInView:"Քարտեզի տեսանելի հատվածում", aRefresh:"↻ Թարմացնել", aNone:"Աճուրդներ չեն գտնվել։",
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
     aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoGeo:"Դիրքերը դեռ հաշվարկված չեն կադաստրում։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
     aCode:"Կադաստրային ծածկագիր", aSold:"Վաճառված է", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
@@ -324,7 +324,7 @@ const I18N = {
     aPhaseAll:"All auctions",
     aRegionOff:"The region filter does not apply while the map view is used.",
     aQueryPh:"Lot number, cadastral code or address",
-    aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
+    aInView:"In current map view", aRefresh:"↻ Refresh", aNone:"No auctions found.",
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
     aNoCode:"No cadastral code — opening the lot page.", aNoGeo:"Positions not resolved from the cadastre yet.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
     aCode:"Cadastral code", aSold:"Sold for", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
@@ -362,7 +362,7 @@ const I18N = {
     aPhaseAll:"Все аукционы",
     aRegionOff:"Фильтр по марзу не применяется при выборе области карты.",
     aQueryPh:"Номер лота, кадастровый код или адрес",
-    aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
+    aInView:"В текущей области карты", aRefresh:"↻ Обновить", aNone:"Аукционы не найдены.",
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
     aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoGeo:"Координаты ещё не получены из кадастра.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
     aCode:"Кадастровый код", aSold:"Продано за", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
@@ -1293,9 +1293,15 @@ function auctionPopup(a, parcel) {
     <a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
-document.getElementById("aSearch").onclick = async () => { await loadAuctions(true); renderAuctions(); };
-// Clear: reset the filters, wipe the results and remove auction parcels
-// from the map. Press Search to fetch again.
+// Refetch from the Worker. Filtering is instant and local, so this button is
+// only about getting newer data — it used to be labelled "Search", which made
+// no sense next to filters that already apply as you type.
+document.getElementById("aRefresh").onclick = async () => {
+  await loadAuctions(true);
+  renderAuctions();
+};
+// Clear: reset the filters and take auction parcels off the map. The list is
+// re-rendered rather than blanked — emptying it only forced another click.
 document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
   document.getElementById("a-q").value = "";
@@ -1304,8 +1310,8 @@ document.getElementById("aClear").onclick = () => {
   auctionLayer.clearLayers();
   drawn.clear();
   renderMeasurements();                 // drop their area / length labels
-  document.getElementById("aList").innerHTML = "";
   aStatus("");
+  renderAuctions();                     // back to the unfiltered list
 };
 for (const id of ["a-phase", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
 // Filter as you type — the list is already in memory, so there is nothing to wait for.
