@@ -818,10 +818,19 @@ function fromGk8(x, y) {
 // layer still renders true boundaries. We fetch that image around the parcel's
 // official centre, flood-fill the enclosing cell and trace its outline, then
 // convert pixels back to lat/lng. Accuracy is ~1 pixel (≈0.2-0.5 m).
-const loadImg = (url) => new Promise((res, rej) => {
+// The timeout is the point. An <img> whose request never answers keeps the
+// browser's loading indicator spinning for the life of the page, and the
+// promise never settles, so the trace that awaits it hangs too — the card keeps
+// its spinner and that lot can never be clicked again. Clearing src aborts the
+// pending request; without it the connection stays open even after we give up.
+const loadImg = (url, ms = 15000) => new Promise((res, rej) => {
   const i = new Image();
+  let done = false;
+  const finish = (fn, arg) => { if (done) return; done = true; clearTimeout(t); fn(arg); };
+  const t = setTimeout(() => { i.src = ""; finish(rej, new Error("image timeout")); }, ms);
   i.crossOrigin = "anonymous";
-  i.onload = () => res(i); i.onerror = rej;
+  i.onload = () => finish(res, i);
+  i.onerror = () => finish(rej, new Error("image failed"));
   i.src = url;
 });
 
