@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-21-refresh">
+<meta name="build" content="2026-08-21-langfix">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -113,6 +113,7 @@
     .acard .go { padding:8px 10px; margin:-8px -8px -8px 0; font-size:16px; }
     .acard.busy::after { width:22px; height:22px; margin:-11px 0 0 -11px; }
     .panel-toggle { display:none; }
+    .langrow { padding-right:0; }                       /* no toggle to avoid */
     .leaflet-bottom { bottom:82px; }                    /* keep controls clear */
   }
   /* Statistics overlay */
@@ -136,6 +137,10 @@
     border:1px solid var(--line); border-radius:8px; background:#1f2937; color:var(--txt);
     font-size:16px; line-height:1; cursor:pointer; }
   .panel h1 { padding-right:30px; }
+  /* The ☰ toggle floats at top:8/right:8, over whatever is beneath it. h1
+     allowed for that; the language row did not, so the select sat under the
+     button and showed one clipped character. */
+  .langrow { padding-right:40px; }
   .panel.collapsed { width:auto; max-height:none; padding:8px; overflow:visible; }
   .panel.collapsed #panelBody { display:none; }
   .panel.collapsed .panel-toggle { position:static; }
@@ -162,7 +167,7 @@
   <button id="panelToggle" class="panel-toggle" data-i18n-title="panelToggle" title="Show/hide panel">☰</button>
   <div class="grip" id="grip" aria-hidden="true"><i></i></div>
   <div id="panelBody">
-  <div class="row" style="justify-content:flex-end;margin-bottom:6px">
+  <div class="row langrow" style="justify-content:flex-end;margin-bottom:6px">
     <select id="lang" style="width:auto">
       <option value="hy">ՀՅ</option>
       <option value="en">EN</option>
