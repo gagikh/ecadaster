@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-21-phasefilter">
+<meta name="build" content="2026-08-21-allfirst">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -54,6 +54,7 @@
   .tab:hover:not(.active) { color:var(--txt); }
   .pane { min-height:268px; }          /* codes textarea + buttons ≈ auctions search + list */
   .pane[hidden] { display:none; }
+  select:disabled { opacity:.45; cursor:not-allowed; }
   .alist { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
   .acard { border:1px solid var(--line); border-radius:8px; padding:8px; cursor:pointer; }
   .acard:hover { border-color:var(--acc); }
@@ -197,11 +198,11 @@
   <div class="pane" id="pane-auctions" role="tabpanel" hidden>
     <select id="a-region"></select>
     <select id="a-phase" style="margin-top:6px">
+      <option value=""         data-i18n="aPhaseAll">All auctions</option>
       <option value="open"     data-i18n="aPhaseOpen">Open auctions only</option>
       <option value="current"  data-i18n="aPhaseCurrent">Ongoing only</option>
       <option value="upcoming" data-i18n="aPhaseUpcoming">Not started only</option>
       <option value="finished" data-i18n="aPhaseFinished">Finished only</option>
-      <option value=""         data-i18n="aPhaseAll">All auctions</option>
     </select>
     <label class="chk"><input type="checkbox" id="a-view">
       <span data-i18n="aInView">In current map view</span></label>
@@ -281,6 +282,7 @@ const I18N = {
     aPhaseOpen:"Միայն բաց աճուրդները", aPhaseCurrent:"Միայն ընթացիկ աճուրդները",
     aPhaseUpcoming:"Միայն չմեկնարկած աճուրդները", aPhaseFinished:"Միայն ավարտված աճուրդները",
     aPhaseAll:"Բոլոր աճուրդները",
+    aRegionOff:"Քարտեզի տեսանելի հատվածում մարզի ընտրությունը չի կիրառվում։",
     aInView:"Քարտեզի տեսանելի հատվածում", aSearch:"Որոնել", aNone:"Աճուրդներ չեն գտնվել։",
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
     aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoGeo:"Դիրքերը դեռ հաշվարկված չեն կադաստրում։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
@@ -317,6 +319,7 @@ const I18N = {
     aPhaseOpen:"Open auctions only", aPhaseCurrent:"Ongoing only",
     aPhaseUpcoming:"Not started only", aPhaseFinished:"Finished only",
     aPhaseAll:"All auctions",
+    aRegionOff:"The region filter does not apply while the map view is used.",
     aInView:"In current map view", aSearch:"Search", aNone:"No auctions found.",
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
     aNoCode:"No cadastral code — opening the lot page.", aNoGeo:"Positions not resolved from the cadastre yet.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
@@ -353,6 +356,7 @@ const I18N = {
     aPhaseOpen:"Только открытые аукционы", aPhaseCurrent:"Только текущие",
     aPhaseUpcoming:"Только не начавшиеся", aPhaseFinished:"Только завершённые",
     aPhaseAll:"Все аукционы",
+    aRegionOff:"Фильтр по марзу не применяется при выборе области карты.",
     aInView:"В текущей области карты", aSearch:"Поиск", aNone:"Аукционы не найдены.",
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
     aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoGeo:"Координаты ещё не получены из кадастра.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
@@ -1074,6 +1078,10 @@ function renderAuctions() {
   const inView = document.getElementById("a-view").checked;
   const b = map.getBounds();
 
+  const regionSel = document.getElementById("a-region");
+  regionSel.disabled = inView;
+  regionSel.title = inView ? t("aRegionOff") : "";
+
   let rows = AUCTIONS || [];
   // "open" is the two live phases together; the rest select one exactly. Same
   // phaseOf() the colours and grouping use, so the filter can never disagree
@@ -1082,7 +1090,12 @@ function renderAuctions() {
   else if (phase) rows = rows.filter(a => phaseOf(a) === phase);
   // matchRegion (regions.js) keys off the cadastral code's marz digits and
   // falls back to case-insensitive text — see the notes there.
-  if (region) rows = rows.filter(a => matchRegion(a, region));
+  //
+  // The map view is the stricter statement of the same idea: whatever is on
+  // screen is already in whichever region it is in. Applying both hides lots
+  // the person is looking straight at, so the view wins and the region select
+  // is disabled while it is on.
+  if (region && !inView) rows = rows.filter(a => matchRegion(a, region));
   if (inView) {
     const located = rows.filter(a => a.lat != null);
     rows = located.filter(a => b.contains([a.lat, a.lng]));
@@ -1265,7 +1278,7 @@ document.getElementById("aSearch").onclick = async () => { await loadAuctions(tr
 // from the map. Press Search to fetch again.
 document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
-  document.getElementById("a-phase").value = "open";
+  document.getElementById("a-phase").value = "";
   document.getElementById("a-view").checked = false;
   auctionLayer.clearLayers();
   drawn.clear();
