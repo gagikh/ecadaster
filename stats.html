@@ -85,6 +85,7 @@ const I18N = {
         perSqm:"֏/մ²", organizer:"Կազմակերպիչ", ends:"Ավարտ",
         none:"Այս ընտրության համար լոտեր չկան։", loading:"Բեռնվում է…",
         noArea:"Մակերեսները դեռ ստացված չեն կադաստրից — ֏/մ² բաժինները դատարկ են։",
+        noPrice:"Այս լոտերը մեկնարկային գին չունեն — գնային ցուցանիշները դատարկ են։",
         lotsShort:"լոտ", weekOf:"շաբ." },
   en: { title:"Auction statistics", map:"Map", open:"Open auctions only",
         all:"All", lots:"Lots", withCode:"With code", withArea:"With area (from cadastre)",
@@ -99,6 +100,7 @@ const I18N = {
         perSqm:"֏/m²", organizer:"Organizer", ends:"Ends",
         none:"No lots for this selection.", loading:"Loading…",
         noArea:"Areas not fetched from the cadastre yet — the ֏/m² panels are empty.",
+        noPrice:"These lots have no starting price — the price panels are empty.",
         lotsShort:"lots", weekOf:"wk" },
   ru: { title:"Статистика аукционов", map:"Карта", open:"Только открытые аукционы",
         all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью (из кадастра)",
@@ -113,6 +115,7 @@ const I18N = {
         perSqm:"֏/м²", organizer:"Организатор", ends:"Окончание",
         none:"Нет лотов для этого выбора.", loading:"Загрузка…",
         noArea:"Площади ещё не получены из кадастра — панели ֏/м² пусты.",
+        noPrice:"У этих лотов нет стартовой цены — ценовые панели пусты.",
         lotsShort:"лотов", weekOf:"нед." },
 };
 
@@ -269,7 +272,9 @@ function render() {
       ${card(t("sqmMax"), money(sqm.length ? Math.max(...sqm) : null), "acc2")}
     </div>
 
-    ${sqm.length ? "" : `<section><p class="note">${t("noArea")}</p></section>`}
+    ${sqm.length ? ""
+      : `<section><p class="note">${
+          prices.length ? t("noArea") : t("noPrice")}</p></section>`}
 
     <div class="charts">
       <section>
