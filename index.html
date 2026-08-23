@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-23-holdspoint">
+<meta name="build" content="2026-08-23-tracelog">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -663,7 +663,7 @@ async function plotAll(skipFit = false) {
       // ("Parcel geometry service is disabled"), so fall back to a marker.
       let isPoly = coords.length >= 3, traced = false;
       if (!isPoly && document.getElementById("do-trace").checked) {
-        const t = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000);
+        const t = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, code);
         if (t && t.length >= 3) { coords.length = 0; coords.push(...t); isPoly = true; traced = true; }
       }
       const layer = isPoly
@@ -853,9 +853,32 @@ function simplify(pts, tol) {                     // Douglas-Peucker
   return pts.filter((_, i) => keep[i]);
 }
 
-async function traceBoundary(lat, lng, area) {
+/**
+ * Bump TRACE_VERSION on ANY change to the tracing or ranking below. Rings are
+ * cached in localStorage, so without it a browser that traced a parcel once
+ * keeps drawing the old outline forever and a fix looks like it did nothing.
+ */
+const TRACE_VERSION = 2;
+
+/**
+ * Every candidate fill this run considered, so a wrong outline can be diagnosed
+ * from the console instead of guessed at: `window.__trace`, and one line per
+ * call. Two theories about the duplicate polygon were wrong because there was
+ * nothing to look at — the same reason /lotdump exists for the parser.
+ */
+let __traceLog = null;
+
+async function traceBoundary(lat, lng, area, label = "") {
   const px = 768;
   const [CX, CY] = toGk8(lat, lng);               // work in the native grid
+  __traceLog = { label, lat, lng, area, v: TRACE_VERSION, tries: [] };
+  window.__trace = __traceLog;
+  const done = (ring, why) => {
+    __traceLog.result = why;
+    console.log(`[trace v${TRACE_VERSION}] ${label || lat + "," + lng} area=${area} -> ${why}`,
+                __traceLog.tries);
+    return ring;
+  };
   for (const mult of [4, 8, 16]) {                // widen if the parcel overflows
     const half = Math.max(30, mult * Math.sqrt(Math.max(area, 100)) / 2);
     const bbox = [CX-half, CY-half, CX+half, CY+half];
@@ -863,11 +886,13 @@ async function traceBoundary(lat, lng, area) {
       service:"WMS", version:"1.1.1", request:"GetMap", layers:"parcels", styles:"",
       format:"image/png", transparent:"true", srs:"EPSG:2400000",
       bbox: bbox.join(","), width:String(px), height:String(px) });
-    let img; try { img = await loadImg(url); } catch (e) { return null; }
+    let img; try { img = await loadImg(url); }
+    catch (e) { return done(null, "WMS image failed: " + (e && e.message)); }
     const cv = document.createElement("canvas"); cv.width = cv.height = px;
     const cx2 = cv.getContext("2d", { willReadFrequently:true });
     cx2.drawImage(img, 0, 0);
-    let data; try { data = cx2.getImageData(0, 0, px, px).data; } catch (e) { return null; }
+    let data; try { data = cx2.getImageData(0, 0, px, px).data; }
+    catch (e) { return done(null, "canvas tainted: " + (e && e.message)); }
 
     const solid = (i) => data[i*4+3] > 40;        // any drawn pixel = a boundary line
     const mid = px >> 1;
@@ -952,7 +977,9 @@ async function traceBoundary(lat, lng, area) {
       // Keep the first ring as a fallback rather than returning nothing, which
       // is what the old code effectively did by returning it immediately.
       if (!(area > 0)) {
-        if (holdsPoint) return gk.map(([x, y]) => fromGk8(x, y));
+        __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count, holds: holdsPoint,
+                                why: "no official area" });
+        if (holdsPoint) return done(gk.map(([x, y]) => fromGk8(x, y)), "holds point (no area)");
         if (!best) best = gk;
         continue;
       }
@@ -963,6 +990,10 @@ async function traceBoundary(lat, lng, area) {
       }
       const got = Math.abs(s) / 2;
       const err = Math.abs(Math.log(got / area));           // symmetric in over/under
+      __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count,
+                              got: Math.round(got), ratio: +(got / area).toFixed(3),
+                              holds: holdsPoint,
+                              why: (got < area * 0.5 || got > area * 2) ? "area rejected" : "candidate" });
       if (got < area * 0.5 || got > area * 2) continue;
       // Containment outranks area outright: a cell holding the point beats a
       // better-fitting neighbour, and only cells of equal standing compete on
@@ -973,9 +1004,10 @@ async function traceBoundary(lat, lng, area) {
         bestErr = err; best = gk; bestHolds = holdsPoint;
       }
     }
-    if (best) return best.map(([x, y]) => fromGk8(x, y));
+    if (best) return done(best.map(([x, y]) => fromGk8(x, y)),
+                          `chose ${bestHolds ? "the cell holding the point" : "best area (no cell holds the point)"}`);
   }
-  return null;
+  return done(null, "no usable fill at any zoom");
 }
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
@@ -1240,7 +1272,15 @@ async function pickAuction(a, el) {
 //   1. the ring stored with the lot (cadastre or a previous trace)
 //   2. this browser's own cache of earlier traces
 //   3. a live /parcel lookup, then raster tracing — seconds, so last resort
-const RING_KEY = "rings.v1";
+// Keyed to TRACE_VERSION: improving the tracer must invalidate rings traced by
+// the old one, or a browser that has seen a parcel once never sees the fix.
+const RING_KEY = "rings.v" + TRACE_VERSION;
+try {                                   // drop rings from superseded tracers
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith("rings.v") && k !== RING_KEY) localStorage.removeItem(k);
+  }
+} catch { /* private mode — nothing cached anyway */ }
 const ringCache = (() => {
   try { return JSON.parse(localStorage.getItem(RING_KEY) || "{}"); } catch { return {}; }
 })();
@@ -1281,7 +1321,7 @@ async function focusAuction(a) {
       if (!res.success || !res.coords || !res.coords.length) throw new Error("no geometry");
       let coords = res.coords, traced = false;
       if (coords.length < 3 && document.getElementById("do-trace").checked) {
-        const tr = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000);
+        const tr = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, a.code);
         if (tr && tr.length >= 3) { coords = tr; traced = true; }
       }
       layer = coords.length >= 3
