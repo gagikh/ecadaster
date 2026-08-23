@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-23-tracelog">
+<meta name="build" content="2026-08-23-tracelog2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -875,8 +875,9 @@ async function traceBoundary(lat, lng, area, label = "") {
   window.__trace = __traceLog;
   const done = (ring, why) => {
     __traceLog.result = why;
-    console.log(`[trace v${TRACE_VERSION}] ${label || lat + "," + lng} area=${area} -> ${why}`,
-                __traceLog.tries);
+    console.log(`[trace v${TRACE_VERSION}] ${label || lat + "," + lng} area=${area} -> ${why}`
+      + ` | onLine=${__traceLog.centreOnLine} skipped=${JSON.stringify(__traceLog.skipped)}`
+      + ` | ${JSON.stringify(__traceLog.tries)}`);
     return ring;
   };
   for (const mult of [4, 8, 16]) {                // widen if the parcel overflows
@@ -912,13 +913,20 @@ async function traceBoundary(lat, lng, area, label = "") {
 
     const region = new Int32Array(px*px);         // 0 = unvisited, else fill id
     const centre = mid*px + mid;                  // the cadastre's point, exactly
+    // Is the point itself on a drawn line? Then it is a corner or an edge, no
+    // fill can ever contain it, and containment cannot decide anything.
+    __traceLog.centreOnLine = solid(centre);
+    __traceLog.skipped = { onLine: 0, leaked: 0, tiny: 0, shortRing: 0 };
     let fills = 0, best = null, bestErr = Infinity, bestHolds = false;
 
     for (const [ox, oy] of seeds) {
       const sxp = mid + ox, syp = mid + oy;
       if (sxp <= 0 || syp <= 0 || sxp >= px-1 || syp >= px-1) continue;
       const seed = syp*px + sxp;
-      if (solid(seed) || region[seed]) continue;  // on a line, or already traced
+      if (solid(seed) || region[seed]) {          // on a line, or already traced
+        if (solid(seed)) __traceLog.skipped.onLine++;
+        continue;
+      }
       const id = ++fills;
 
       const q = [seed]; region[seed] = id;
@@ -932,7 +940,14 @@ async function traceBoundary(lat, lng, area, label = "") {
           if (!region[j] && !solid(j)) { region[j] = id; q.push(j); }
         }
       }
-      if (touchedEdge || count < 50) continue;    // leaked out — try a wider window
+      if (touchedEdge || count < 50) {            // leaked out — try a wider window
+        __traceLog.skipped[touchedEdge ? "leaked" : "tiny"]++;
+        // A leak that swallowed the point is the important case: it means the
+        // parcel's outline has a gap at this resolution and OUR cell was the
+        // one thrown away, so every survivor is a neighbour.
+        if (touchedEdge && region[centre] === id) __traceLog.leakAtePoint = true;
+        continue;
+      }
 
       // Moore-neighbour contour trace of this fill
       let sx = -1, sy = -1;
@@ -953,7 +968,7 @@ async function traceBoundary(lat, lng, area, label = "") {
         }
         if (!moved) break;
       } while ((cx3 !== sx || cy3 !== sy) && ++guard < 200000);
-      if (ring.length < 8) continue;
+      if (ring.length < 8) { __traceLog.skipped.shortRing++; continue; }
 
       const simple = simplify(ring, 1.2);
       const gk = simple.map(([x, y]) => [
@@ -1527,7 +1542,8 @@ map.on("locationerror", (e) => {
 async function restore() { isRestoring = true; try { await applyStateFromURL(); } finally { isRestoring = false; } }
 async function boot() {
   syncStatsLink();
-  console.info("ecadaster build 2026-08-15-2350");
+  console.info("ecadaster build " +
+    (document.querySelector('meta[name="build"]')?.content || "unknown"));
   try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; }
   catch (e) { LANG = "hy"; }
   applyI18n();
