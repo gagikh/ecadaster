@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-24-corner-rule">
+<meta name="build" content="2026-08-24-honest-errors">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -321,6 +321,8 @@ const I18N = {
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
     rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։",
     inferred:"⚠ եզրագիծը ենթադրված է. կադաստրի կետը անկյուն է, և այս հողամասն է միակը, որ դիպչում է կետին և համապատասխանում է մակերեսին",
+    upstreamDown:"կադաստրը չի պատասխանում — ծածկագիրը սխալ չէ, կրկին փորձեք",
+    ambiguousCode:"կադաստրը մի քանի հողամաս վերադարձրեց — ճշգրիտ համընկնում չկա",
     notFound:"չի գտնվել", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
     unconfirmed:"⚠ Տեղը հաստատված չէ. կադաստրի որոնումը վերադարձրեց տող, որը այս ծածկագիրը չի պարունակում։",
   },
@@ -361,6 +363,8 @@ const I18N = {
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
     rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).",
     inferred:"⚠ boundary inferred: the cadastre point is a corner, and this was the only parcel touching it that also matches the registered area",
+    upstreamDown:"the cadastre is not answering — the code is not wrong, try again",
+    ambiguousCode:"the cadastre returned no exact match for this code",
     notFound:"not found", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
     unconfirmed:"⚠ Location unconfirmed: the cadastre search returned a row that does not carry this code.",
   },
@@ -401,6 +405,8 @@ const I18N = {
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
     rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).",
     inferred:"⚠ граница выведена косвенно: точка кадастра — угол, и это единственный участок, который её касается и совпадает по площади",
+    upstreamDown:"кадастр не отвечает — код верен, попробуйте ещё раз",
+    ambiguousCode:"кадастр не вернул точного совпадения по этому коду",
     notFound:"не найдено", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
     unconfirmed:"⚠ Местоположение не подтверждено: поиск кадастра вернул запись без этого кода.",
   },
@@ -713,11 +719,38 @@ function syncPointGroup() {
   if (wantPoint()) map.addLayer(pointGroup); else map.removeLayer(pointGroup);
 }
 
+/**
+ * Ask the worker for a parcel, and say WHY when there isn't one.
+ *
+ * This used to `return null` for every kind of failure, and the legend printed
+ * "not found" for all of them. So a cadastre that accepts the connection and
+ * never answers — which is what an outage looks like from here, a timeout at
+ * our own 8s cut-off — was reported to the user as "this cadastral code does
+ * not exist". That is not a wording quibble: it sends someone off to re-check a
+ * code that was correct all along, and it hides an outage precisely when the
+ * map still looks alive because its raster tiles come from the edge cache.
+ *
+ * Returns { ok:true, data } or { ok:false, reason } where reason is one of
+ * "down" (upstream did not answer), "ambiguous" (the worker refused to guess
+ * between parcels), or "missing" (the cadastre genuinely has no such code).
+ */
 async function fetchPolygon(code) {
-  const r = await fetch(API + "/parcel?code=" + encodeURIComponent(code));
-  const d = await r.json();
-  if (!d.success || !d.coords || !d.coords.length) return null;
-  return d;                                    // { coords:[[lat,lng],...], area, updated, source }
+  let d;
+  try {
+    const r = await fetch(API + "/parcel?code=" + encodeURIComponent(code));
+    d = await r.json();
+  } catch (e) {
+    return { ok: false, reason: "down" };      // network, CORS, non-JSON
+  }
+  if (d.success && d.coords && d.coords.length) return { ok: true, data: d };
+  const err = String(d.error || "");
+  if (d.ambiguous || /ambiguous|different parcel/i.test(err))
+    return { ok: false, reason: "ambiguous" };
+  // "timeout", "unavailable", "unreachable", "down" — anything that is about
+  // the upstream rather than about this code.
+  if (/timeout|unavailable|unreachable|stalled|down|5\d\d/i.test(err))
+    return { ok: false, reason: "down" };
+  return { ok: false, reason: "missing" };
 }
 
 function clearAll() {
@@ -783,7 +816,9 @@ function renderLegend() {
     ? `<div class="legrow"><span class="swatch" data-i="${i}" style="background:${p.color}"></span>
          <span class="code">${p.code}</span><span class="area">${fmtArea(p.area)}</span></div>`
     : `<div class="legrow"><span class="swatch" style="background:#374151"></span>
-         <span class="code">${p.code}</span> <span class="miss">${t("notFound")}</span></div>`
+         <span class="code">${p.code}</span> <span class="miss">${
+           t(p.reason === "down" ? "upstreamDown"
+           : p.reason === "ambiguous" ? "ambiguousCode" : "notFound")}</span></div>`
   ).join("");
   document.querySelectorAll("#legend .swatch[data-i]").forEach(el => el.onclick = () => {
     const p = plotted[+el.dataset.i];
@@ -820,8 +855,9 @@ async function plotAll(skipFit = false) {
   let colorIdx = 0, corsHit = false;
   for (const code of codes) {
     try {
-      const res = await fetchPolygon(code);
-      if (!res) { plotted.push({ code, ok:false }); continue; }
+      const got = await fetchPolygon(code);
+      if (!got.ok) { plotted.push({ code, ok:false, reason: got.reason }); continue; }
+      const res = got.data;
       const coords = res.coords;
       const color = PALETTE[colorIdx++ % PALETTE.length];
       // Hold the registry's own vertex before tracing overwrites `coords` in
@@ -867,7 +903,13 @@ async function plotAll(skipFit = false) {
     map.fitBounds(b, { padding:[30,30], maxZoom:19 });
   }
   const okN = plotted.filter(p => p.ok).length;
-  status(corsHit ? t("corsMsg") : t("plotted", okN, codes.length));
+  // If every failure was the upstream, say so instead of reporting a tally that
+  // reads like the codes were wrong.
+  const failures = plotted.filter(p => !p.ok);
+  const allDown = failures.length && failures.every(p => p.reason === "down");
+  status(corsHit ? t("corsMsg")
+       : allDown && !okN ? t("upstreamDown")
+       : t("plotted", okN, codes.length));
   commit();
 }
 
