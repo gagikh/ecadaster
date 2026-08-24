@@ -1683,8 +1683,17 @@ async function focusAuction(a) {
     // outline here that is not a reconstruction — it earns a solid line.
     let known = null, ringSrc = null;
     if (a.ring && a.ring.length >= 3) { known = a.ring; ringSrc = a.geomSrc; }
-    else if (db.ring && db.ring.length >= 3) { known = db.ring; ringSrc = db.src; }
-    else if (cached) {
+    // `geom` arrives only from /auctions?geom=1, which nothing requests today.
+    // Kept anyway: it costs one branch, and dropping it would mean turning that
+    // flag on some day and silently getting no outlines from it.
+    else if (a.geom) {
+      try {
+        const g = JSON.parse(a.geom);
+        if (g && g.length >= 3) { known = g; ringSrc = a.geomSrc; }
+      } catch { /* a malformed ring is no ring */ }
+    }
+    if (!known && db.ring && db.ring.length >= 3) { known = db.ring; ringSrc = db.src; }
+    if (!known && cached) {
       const c = Array.isArray(cached) ? cached : cached.ring;
       if (c && c.length >= 3) { known = c; ringSrc = "traced"; }
     }
