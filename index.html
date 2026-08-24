@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-23-tracelog2">
+<meta name="build" content="2026-08-23-refuse">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -296,7 +296,6 @@ const I18N = {
     aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoGeo:"Դիրքերը դեռ հաշվարկված չեն կադաստրում։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
     aCode:"Կադաստրային ծածկագիր", aSold:"Վաճառված է", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
     aOrganizer:"Կազմակերպիչ", aStarts:"Մեկնարկ", aEnds:"Ավարտ", aOpenLot:"Բացել աճուրդի էջը", aSoon:"Աճուրդների ցանկը դեռ միացված չէ (սերվերը պատրաստ չէ)։",
-    auctionsSoon:"Այստեղ կցուցադրվեն բաց աճուրդները՝ կադաստրային ծածկագրով։",
     legBasemap:"Հիմնաքարտեզ", legRasters:"Կադաստրի պաշտոնական շերտեր", legMeas:"Չափումներ",
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
     opacity:"Լցման/շերտի թափանցիկություն",
@@ -334,7 +333,6 @@ const I18N = {
     aNoCode:"No cadastral code — opening the lot page.", aNoGeo:"Positions not resolved from the cadastre yet.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
     aCode:"Cadastral code", aSold:"Sold for", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
     aOrganizer:"Organizer", aStarts:"Starts", aEnds:"Ends", aOpenLot:"Open the lot page", aSoon:"Auction list is not connected yet (server pending).",
-    auctionsSoon:"Open auctions with cadastral codes will be listed here.",
     legBasemap:"Basemap", legRasters:"Official cadastre layers", legMeas:"Measurements",
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
     opacity:"Parcel fill / overlay opacity",
@@ -372,7 +370,6 @@ const I18N = {
     aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoGeo:"Координаты ещё не получены из кадастра.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
     aCode:"Кадастровый код", aSold:"Продано за", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
     aOrganizer:"Организатор", aStarts:"Начало", aEnds:"Окончание", aOpenLot:"Открыть страницу лота", aSoon:"Список аукционов ещё не подключён (сервер не готов).",
-    auctionsSoon:"Здесь появятся открытые аукционы с кадастровым кодом.",
     legBasemap:"Подложка", legRasters:"Официальные слои кадастра", legMeas:"Измерения",
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
     opacity:"Прозрачность заливки/слоя",
@@ -858,7 +855,7 @@ function simplify(pts, tol) {                     // Douglas-Peucker
  * cached in localStorage, so without it a browser that traced a parcel once
  * keeps drawing the old outline forever and a fix looks like it did nothing.
  */
-const TRACE_VERSION = 2;
+const TRACE_VERSION = 3;
 
 /**
  * Every candidate fill this run considered, so a wrong outline can be diagnosed
@@ -1017,6 +1014,21 @@ async function traceBoundary(lat, lng, area, label = "") {
       // neighbour can land nearer the nominal figure.
       if (holdsPoint !== bestHolds ? holdsPoint : err < bestErr) {
         bestErr = err; best = gk; bestHolds = holdsPoint;
+      }
+    }
+    // Refuse to guess. When the point is on a line no cell contains it, and if
+    // the two best cells match the official area about equally well, the winner
+    // is decided by rounding noise — which is exactly how 02-082-0082-0004 and
+    // -0005 came to draw the same outline, solid and captionless, with nothing
+    // to suggest anything was wrong. A confident wrong boundary is worse than
+    // none: you cannot tell it from a correct one. Show the point instead.
+    if (best && !bestHolds) {
+      const rivals = __traceLog.tries
+        .filter(t => t.mult === mult && t.why === "candidate")
+        .map(t => Math.abs(t.ratio - 1)).sort((a, b) => a - b);
+      if (rivals.length > 1 && rivals[1] - rivals[0] < 0.05) {
+        return done(null, `ambiguous: ${rivals.length} cells fit the official area `
+          + `within ${((rivals[1] - rivals[0]) * 100).toFixed(1)}% of each other`);
       }
     }
     if (best) return done(best.map(([x, y]) => fromGk8(x, y)),
