@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-23-refuse">
+<meta name="build" content="2026-08-24-pin-only-containment">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -42,6 +42,11 @@
     border-radius:5px; padding:1px 5px; font:600 11px system-ui; white-space:nowrap; }
   .llabel { background:rgba(2,6,23,.72); color:#e2e8f0; border-radius:4px; padding:0 3px;
     font:11px ui-monospace,monospace; white-space:nowrap; }
+  /* Leaflet's default .leaflet-div-icon paints a white box with a border —
+     fine for a text label, wrong for an SVG pin that already draws its own
+     outline. Strip it back to nothing so only the pin itself shows. */
+  .cadastre-pin { background:none; border:none; }
+  .cadastre-pin svg { display:block; filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
   .leaflet-popup-content { font-size:12px; }
   .leaflet-popup-content table { border-collapse:collapse; }
   .leaflet-popup-content td { padding:2px 6px; border-bottom:1px solid #eee; vertical-align:top; }
@@ -557,6 +562,27 @@ const fmtLen  = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} 
 const PALETTE = ["#f59e0b","#38bdf8","#a78bfa","#34d399","#f472b6","#fb7185",
                  "#facc15","#4ade80","#60a5fa","#f97316"];
 let plotted = [];                              // {code, coords, layer, ok, color, area, perim}
+
+/**
+ * A Google-Maps-style teardrop pin, for the one case a `circleMarker` dot
+ * used to stand in for: a code whose only known location is a bare point —
+ * no boundary, traced or real. That is now a MORE common outcome than it used
+ * to be (the tracer refuses outright rather than guess a shape at a shared
+ * corner, since 2026-08-24), so it earns a marker that reads as "this is a
+ * location, not a shape" at a glance, rather than a small dot easy to mistake
+ * for map furniture. `meMarker` ("you are here") stays a plain circle
+ * deliberately — a pin would misread as a parcel result.
+ */
+function pinIcon(color) {
+  const svg = `
+    <svg width="26" height="36" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 0C5.8 0 0 5.8 0 13c0 9.5 13 23 13 23s13-13.5 13-23C26 5.8 20.2 0 13 0z"
+            fill="${color}" stroke="#fff" stroke-width="2"/>
+      <circle cx="13" cy="13" r="5" fill="#fff"/>
+    </svg>`;
+  return L.divIcon({ className: "cadastre-pin", html: svg,
+                     iconSize: [26, 36], iconAnchor: [13, 34], popupAnchor: [0, -30] });
+}
 const areaGroup = L.layerGroup().addTo(map);   // area labels
 const lenGroup  = L.layerGroup().addTo(map);   // edge-length labels
 
@@ -666,8 +692,7 @@ async function plotAll(skipFit = false) {
       const layer = isPoly
         ? L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal(),
                               dashArray: traced ? "6 4" : null }).addTo(map)
-        : L.circleMarker(coords[0], { radius:8, color, weight:3,
-            fillColor:color, fillOpacity:0.9 }).addTo(map);
+        : L.marker(coords[0], { icon: pinIcon(color) }).addTo(map);
       const p = { code, coords, layer, ok:true, color, isPoly, traced,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
                   perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
@@ -851,11 +876,22 @@ function simplify(pts, tol) {                     // Douglas-Peucker
 }
 
 /**
- * Bump TRACE_VERSION on ANY change to the tracing or ranking below. Rings are
- * cached in localStorage, so without it a browser that traced a parcel once
- * keeps drawing the old outline forever and a fix looks like it did nothing.
+ * Bump TRACE_VERSION on ANY change to the tracing or ranking below — AND on
+ * any server-side fix that could have changed which POINT a code resolves to
+ * in the first place, even though this constant lives on the client. Rings
+ * are cached in localStorage keyed by cadastral code, so a wrong ring, once
+ * traced and cached, keeps being served forever with no further network
+ * calls — the fix below never runs again for that code until the cache key
+ * changes.
+ *
+ * Bumped 4: 2026-08-24. /parcel used to silently return a NEIGHBOUR's point
+ * for a code whose exact match was not among the cadastre's up-to-5 search
+ * results ("search 02-082-0009-0037, get 02-082-0009-0007" — a different
+ * parcel entirely, not a ranking mistake in the tracer). That is now refused
+ * server-side, but any ring already traced from the wrong point is sitting in
+ * localStorage right now and would keep being drawn without this bump.
  */
-const TRACE_VERSION = 3;
+const TRACE_VERSION = 4;
 
 /**
  * Every candidate fill this run considered, so a wrong outline can be diagnosed
@@ -914,7 +950,7 @@ async function traceBoundary(lat, lng, area, label = "") {
     // fill can ever contain it, and containment cannot decide anything.
     __traceLog.centreOnLine = solid(centre);
     __traceLog.skipped = { onLine: 0, leaked: 0, tiny: 0, shortRing: 0 };
-    let fills = 0, best = null, bestErr = Infinity, bestHolds = false;
+    let fills = 0;
 
     for (const [ox, oy] of seeds) {
       const sxp = mid + ox, syp = mid + oy;
@@ -972,69 +1008,53 @@ async function traceBoundary(lat, lng, area, label = "") {
         bbox[0] + (x / px) * (bbox[2] - bbox[0]),
         bbox[3] - (y / px) * (bbox[3] - bbox[1])]);
 
-      // Does this fill contain the cadastre's own point? The seed may be one of
-      // the offsets, so a fill can be a neighbour's — and area alone cannot
-      // tell: 02-082-0082-0004 is 2000.23 m² and -0005 is 2008.47 m², 45 m
-      // apart, so each one's outline validates perfectly as the other's and
-      // both codes drew the same polygon. Whichever cell actually contains the
-      // point is the answer; area only ranks the fallbacks.
+      // Does this fill contain the cadastre's own point?
+      //
+      // AREA-BASED SELECTION IS GONE. It used to rank non-containing fills by
+      // how closely their traced area matched the official one, on the theory
+      // that a close-enough match was good evidence. It is not: two real,
+      // independent incidents proved it wrong.
+      //   02-082-0082-0004 (2000.23 m²) / -0005 (2008.47 m²), 45 m apart, 0.4%
+      //   02-082-0009-0037 (2000.05 m²) / -0007 (2000.12 m²), 50 m apart, 0.03%
+      // In both, the two real parcels are close enough in size that "closest
+      // area" is a coin flip, not a signal — and the coin landed on the wrong
+      // neighbour BOTH times, drawn as a confident, solid-looking shape with
+      // nothing to say it might be wrong. There is a structural reason area
+      // can never be trusted here, not just bad luck: this branch is only
+      // reached when the point lies exactly ON a boundary line (if it were
+      // inside a parcel, that parcel's own fill would already have won by
+      // containment, below) — so every single candidate considered here comes
+      // from a corner where multiple parcels touch. It is never "probably
+      // right, occasionally wrong"; it is inherently a guess among neighbours
+      // every time it runs.
+      //
+      // So: a fill containing the exact point wins immediately, unconditional
+      // on area or on anything else — only one fill can ever contain a given
+      // pixel, so this cannot itself be ambiguous. Nothing else ever wins.
+      // Official area is still recorded per candidate for the console log,
+      // because it is useful for a human reading `window.__trace` even though
+      // the algorithm no longer acts on it.
       const holdsPoint = region[centre] === id;
-
-      // The official area is the arbiter among cells that do NOT contain the
-      // point (the cadastre's point is sometimes a corner, where four cells
-      // meet and none contains it — that is why the offset seeds exist).
-      // Tolerance is wide because the trace follows the inside of a drawn line,
-      // so it reads a little small by construction.
-      // No official area (a code plotted by hand): containment is all we have.
-      // Keep the first ring as a fallback rather than returning nothing, which
-      // is what the old code effectively did by returning it immediately.
-      if (!(area > 0)) {
-        __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count, holds: holdsPoint,
-                                why: "no official area" });
-        if (holdsPoint) return done(gk.map(([x, y]) => fromGk8(x, y)), "holds point (no area)");
-        if (!best) best = gk;
-        continue;
+      let got = null, ratio = null;
+      if (area > 0) {
+        let s = 0;
+        for (let i = 0, n = gk.length; i < n; i++) {
+          const [x1, y1] = gk[i], [x2, y2] = gk[(i + 1) % n];
+          s += x1 * y2 - x2 * y1;
+        }
+        got = Math.abs(s) / 2; ratio = +(got / area).toFixed(3);
       }
-      let s = 0;
-      for (let i = 0, n = gk.length; i < n; i++) {
-        const [x1, y1] = gk[i], [x2, y2] = gk[(i + 1) % n];
-        s += x1 * y2 - x2 * y1;
-      }
-      const got = Math.abs(s) / 2;
-      const err = Math.abs(Math.log(got / area));           // symmetric in over/under
-      __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count,
-                              got: Math.round(got), ratio: +(got / area).toFixed(3),
-                              holds: holdsPoint,
-                              why: (got < area * 0.5 || got > area * 2) ? "area rejected" : "candidate" });
-      if (got < area * 0.5 || got > area * 2) continue;
-      // Containment outranks area outright: a cell holding the point beats a
-      // better-fitting neighbour, and only cells of equal standing compete on
-      // area. Without this the neighbour usually WINS, because the correct
-      // trace reads slightly small (it hugs the inside of the line) while the
-      // neighbour can land nearer the nominal figure.
-      if (holdsPoint !== bestHolds ? holdsPoint : err < bestErr) {
-        bestErr = err; best = gk; bestHolds = holdsPoint;
-      }
+      __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count, holds: holdsPoint,
+                              got: got == null ? null : Math.round(got), ratio });
+      if (holdsPoint) return done(gk.map(([x, y]) => fromGk8(x, y)), "holds point");
     }
-    // Refuse to guess. When the point is on a line no cell contains it, and if
-    // the two best cells match the official area about equally well, the winner
-    // is decided by rounding noise — which is exactly how 02-082-0082-0004 and
-    // -0005 came to draw the same outline, solid and captionless, with nothing
-    // to suggest anything was wrong. A confident wrong boundary is worse than
-    // none: you cannot tell it from a correct one. Show the point instead.
-    if (best && !bestHolds) {
-      const rivals = __traceLog.tries
-        .filter(t => t.mult === mult && t.why === "candidate")
-        .map(t => Math.abs(t.ratio - 1)).sort((a, b) => a - b);
-      if (rivals.length > 1 && rivals[1] - rivals[0] < 0.05) {
-        return done(null, `ambiguous: ${rivals.length} cells fit the official area `
-          + `within ${((rivals[1] - rivals[0]) * 100).toFixed(1)}% of each other`);
-      }
-    }
-    if (best) return done(best.map(([x, y]) => fromGk8(x, y)),
-                          `chose ${bestHolds ? "the cell holding the point" : "best area (no cell holds the point)"}`);
+    // No fill in this window contained the point — try a wider one; a coarser
+    // raster sometimes reads the same pixel as off the line where a finer one
+    // read it as on the line. If every width comes up empty, the point is
+    // genuinely a shared corner and there is nothing left to try: show the
+    // point rather than a guess.
   }
-  return done(null, "no usable fill at any zoom");
+  return done(null, "no cell contains the point at any zoom");
 }
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
@@ -1354,8 +1374,7 @@ async function focusAuction(a) {
       layer = coords.length >= 3
         ? L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
                               fillOpacity: opacityVal(), dashArray: traced ? "6 4" : null })
-        : L.circleMarker(coords[0], { radius: 9, color: AUCTION_COLOR, weight: 3,
-                              fillColor: AUCTION_COLOR, fillOpacity: 0.9 });
+        : L.marker(coords[0], { icon: pinIcon(AUCTION_COLOR) });
       layer.bindPopup(auctionPopup(a, res), popupOpts());
       layer.addTo(auctionLayer);
       drawn.set(a.code, { layer, coords, area: res.area ?? a.area,
