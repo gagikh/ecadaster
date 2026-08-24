@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-24-pin-only-containment">
+<meta name="build" content="2026-08-24-point-plus-polygon">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -267,6 +267,10 @@
     <label class="chk"><input type="checkbox" id="show-area" checked> <span data-i18n="showArea">Show area (m² / ha)</span></label>
     <label class="chk"><input type="checkbox" id="show-len"> <span data-i18n="showLen">Show edge lengths (m)</span></label>
     <label class="chk"><input type="checkbox" id="do-trace" checked> <span data-i18n="doTrace">Trace boundary from cadastre map</span></label>
+    <!-- The cadastre's point and the parcel's outline answer different
+         questions ("which corner does the registry hold?" vs "how far does
+         the parcel run?"), so a parcel that has both now shows both. -->
+    <label class="chk"><input type="checkbox" id="show-point" checked> <span data-i18n="showPoint">Also pin the cadastre point on outlined parcels</span></label>
   </fieldset>
 
   <p class="hint" data-i18n-html="hint"></p>
@@ -305,6 +309,7 @@ const I18N = {
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
     opacity:"Լցման/շերտի թափանցիկություն",
     showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)", doTrace:"Եզրագիծը վերծանել կադաստրի քարտեզից",
+    showPoint:"Եզրագծված հողամասերի վրա նաև ցույց տալ կադաստրի կետը",
     hint:`Մուտքագրեք կադաստրային ծածկագրերը և սեղմեք <b>Գծել բոլորը</b> — յուրաքանչյուր հողամաս ստանում է իր գույնը՝ պաշտոնական մակերեսով և ընտրովի եզրերի երկարություններով։ Սեղմեք հողամասին՝ մանրամասների համար։ Տվյալները՝ ՀՀ կադաստրի կոմիտեից։`,
     panelToggle:"Ցույց տալ/թաքցնել վահանակը", locateTitle:"Ցույց տալ իմ տեղը",
     locating:"Որոնում…", locAcc:r=>`Տեղորոշում ±${r} մ`,
@@ -316,7 +321,9 @@ const I18N = {
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
     rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։",
-    notFound:"չի գտնվել", pointOnly:"միայն կենտրոն կետ (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
+    notFound:"չի գտնվել", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
+    refPoint:"կադաստրի հենակետ (հողամասի անկյուն)",
+    unconfirmed:"⚠ Տեղը հաստատված չէ. կադաստրի որոնումը վերադարձրեց տող, որը այս ծածկագիրը չի պարունակում։",
   },
   en: {
     title:"Armenia cadastre map",
@@ -342,6 +349,7 @@ const I18N = {
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
     opacity:"Parcel fill / overlay opacity",
     showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)", doTrace:"Trace boundary from cadastre map",
+    showPoint:"Also pin the cadastre point on outlined parcels",
     hint:`Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with its official area and optional edge lengths. Click a parcel for details. Boundaries and layers come live from the State Cadastre Committee of Armenia.`,
     panelToggle:"Show/hide panel", locateTitle:"Show my location",
     locating:"Locating…", locAcc:r=>`Location ±${r} m`,
@@ -353,7 +361,9 @@ const I18N = {
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
     rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).",
-    notFound:"not found", pointOnly:"centre point only (cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
+    notFound:"not found", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
+    refPoint:"cadastre reference point (a corner of the parcel)",
+    unconfirmed:"⚠ Location unconfirmed: the cadastre search returned a row that does not carry this code.",
   },
   ru: {
     title:"Карта кадастра Армении",
@@ -379,6 +389,7 @@ const I18N = {
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
     opacity:"Прозрачность заливки/слоя",
     showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)", doTrace:"Обвести границу по карте кадастра",
+    showPoint:"Также показывать опорную точку кадастра на обведённых участках",
     hint:`Введите кадастровые коды и нажмите <b>Показать все</b> — каждый участок получает свой цвет, с официальной площадью и опциональными длинами сторон. Нажмите на участок для деталей. Данные — Комитет кадастра Армении.`,
     panelToggle:"Показать/скрыть панель", locateTitle:"Показать моё местоположение",
     locating:"Определение…", locAcc:r=>`Местоположение ±${r} м`,
@@ -390,7 +401,9 @@ const I18N = {
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
     rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).",
-    notFound:"не найдено", pointOnly:"только центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
+    notFound:"не найдено", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
+    refPoint:"опорная точка кадастра (угол участка)",
+    unconfirmed:"⚠ Местоположение не подтверждено: поиск кадастра вернул запись без этого кода.",
   },
 };
 let LANG = "hy";
@@ -586,6 +599,39 @@ function pinIcon(color) {
 const areaGroup = L.layerGroup().addTo(map);   // area labels
 const lenGroup  = L.layerGroup().addTo(map);   // edge-length labels
 
+/**
+ * The cadastre's own reference point, drawn ALONGSIDE an outline rather than
+ * instead of it.
+ *
+ * These are two different claims about a parcel and conflating them is what
+ * made a correct lookup look like a wrong one. The outline is reconstructed by
+ * us from the raster and says how far the parcel runs; the point is what the
+ * registry actually holds and is a CORNER of the geometry, not its centre. On
+ * a long parcel — a street, a strip, an access road — that corner sits at one
+ * end, hundreds of metres from anything a person would call "the location", so
+ * showing it alone reads as a wrong answer. Showing both at once makes the
+ * relationship legible: the pin is a vertex OF the shape next to it.
+ *
+ * It lives in its own group, not inside the parcel layer, on purpose:
+ *   - fitBounds() still frames the parcel, not a marker's icon box
+ *   - setStyle() in applyOpacity() keeps meeting only polygons
+ *   - the toggle is one addLayer/removeLayer, with nothing to redraw
+ * A parcel with no outline at all is unchanged: there the pin IS the result,
+ * and it is drawn by the caller as the parcel layer itself.
+ */
+const pointGroup = L.layerGroup().addTo(map);
+const wantPoint = () => document.getElementById("show-point").checked;
+function addRefPoint(latlng, color, popupBody) {
+  if (!latlng) return null;
+  const m = L.marker(latlng, { icon: pinIcon(color), zIndexOffset: 500 });
+  m.bindPopup(`${popupBody}<br><i>${t("refPoint")}</i>`, popupOpts());
+  m.addTo(pointGroup);
+  return m;
+}
+function syncPointGroup() {
+  if (wantPoint()) map.addLayer(pointGroup); else map.removeLayer(pointGroup);
+}
+
 async function fetchPolygon(code) {
   const r = await fetch(API + "/parcel?code=" + encodeURIComponent(code));
   const d = await r.json();
@@ -597,6 +643,11 @@ function clearAll() {
   plotted.forEach(p => p.layer && map.removeLayer(p.layer));
   plotted = [];
   areaGroup.clearLayers(); lenGroup.clearLayers();
+  // Auction pins live in the same group, so re-add the ones still on the map
+  // instead of dropping every point the auctions tab drew.
+  pointGroup.clearLayers();
+  if (typeof drawn !== "undefined")
+    for (const p of drawn.values()) if (p && p.pin) p.pin.addTo(pointGroup);
   document.getElementById("legend").innerHTML = "";
   status("");
 }
@@ -607,6 +658,9 @@ function popupHtml(p) {
     (p.isPoly ? `<br>${t("popupPerim")}: ${fmtLen(p.perim)}<br>${t("popupVerts")}: ${p.coords.length}`
               : `<br><i>${t("pointOnly")}</i>`) +
     (p.traced ? `<br><i>${t("traced")}</i>` : "") +
+    // exact === false means the worker matched a row that does not carry this
+    // code. It is not refused (see pickRow) but it must not look like a fact.
+    (p.exact === false ? `<br><b style="color:#b45309">${t("unconfirmed")}</b>` : "") +
     (p.updated ? `<br><span style="color:#666">${p.updated}</span>` : "");
 }
 
@@ -682,7 +736,12 @@ async function plotAll(skipFit = false) {
       if (!res) { plotted.push({ code, ok:false }); continue; }
       const coords = res.coords;
       const color = PALETTE[colorIdx++ % PALETTE.length];
-      // The cadastre currently serves only a centre point for most parcels
+      // Hold the registry's own point before tracing overwrites `coords` in
+      // place. It is the only thing here the cadastre actually asserts, and
+      // once an outline exists it is still worth drawing next to it — see
+      // addRefPoint().
+      const anchor = coords[0];
+      // The cadastre currently serves only a single vertex for most parcels
       // ("Parcel geometry service is disabled"), so fall back to a marker.
       let isPoly = coords.length >= 3, traced = false;
       if (!isPoly && document.getElementById("do-trace").checked) {
@@ -692,11 +751,14 @@ async function plotAll(skipFit = false) {
       const layer = isPoly
         ? L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal(),
                               dashArray: traced ? "6 4" : null }).addTo(map)
-        : L.marker(coords[0], { icon: pinIcon(color) }).addTo(map);
-      const p = { code, coords, layer, ok:true, color, isPoly, traced,
+        : L.marker(anchor, { icon: pinIcon(color) }).addTo(map);
+      const p = { code, coords, layer, ok:true, color, isPoly, traced, anchor, exact: res.exact,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
                   perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
       layer.bindPopup(popupHtml(p), popupOpts());
+      // Outline AND point, not one or the other. Only when there is an outline:
+      // without one the pin above already IS the parcel layer.
+      if (isPoly) p.pin = addRefPoint(anchor, color, `<b>${code}</b>`);
       plotted.push(p);
       allBounds.push(isPoly ? layer.getBounds() : L.latLngBounds([coords[0], coords[0]]).pad(0.002));
     } catch (err) {
@@ -721,6 +783,7 @@ document.getElementById("find").onclick = () => plotAll();
 document.getElementById("clear").onclick = clearAll;
 document.getElementById("show-area").onchange = () => { renderMeasurements(); commit(); };
 document.getElementById("show-len").onchange = () => { renderMeasurements(); commit(); };
+document.getElementById("show-point").onchange = () => { syncPointGroup(); commit(); };
 document.getElementById("codes").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) plotAll();   // Ctrl/Cmd+Enter
 });
@@ -742,6 +805,7 @@ function buildShareURL() {
   p.set("op", document.getElementById("opacity").value);
   p.set("area", document.getElementById("show-area").checked ? 1 : 0);
   p.set("len",  document.getElementById("show-len").checked ? 1 : 0);
+  p.set("pt",   document.getElementById("show-point").checked ? 1 : 0);
   p.set("z", map.getZoom());
   p.set("lat", c.lat.toFixed(6));
   p.set("lng", c.lng.toFixed(6));
@@ -790,6 +854,8 @@ async function applyStateFromURL() {
   if (q.get("op")  !== null) { document.getElementById("opacity").value = q.get("op"); applyOpacity(); }
   if (q.get("area") !== null) document.getElementById("show-area").checked = q.get("area") === "1";
   if (q.get("len")  !== null) document.getElementById("show-len").checked  = q.get("len")  === "1";
+  if (q.get("pt")   !== null) document.getElementById("show-point").checked = q.get("pt")  === "1";
+  syncPointGroup();     // before plotAll below, so a shared "pt=0" link never flashes the pins
 
   const hasView = q.get("lat") && q.get("lng") && q.get("z");
   if (q.get("codes")) {
@@ -890,8 +956,16 @@ function simplify(pts, tol) {                     // Douglas-Peucker
  * parcel entirely, not a ranking mistake in the tracer). That is now refused
  * server-side, but any ring already traced from the wrong point is sitting in
  * localStorage right now and would keep being drawn without this bump.
+ *
+ * Bumped 5: 2026-08-24. Two leak bugs, both of which produce a cached ring
+ * that no later fix can dislodge: (a) a fill that reached the image border
+ * used to `break` mid-drain, leaving half its pixels unclaimed for a later
+ * seed to re-fill against the abandoned wall; (b) a fill that held the point
+ * won however large it was, so a leak through a gap in the raster lines could
+ * be drawn as a boundary around an entire block. Rings traced under either
+ * are indistinguishable from good ones once in localStorage.
  */
-const TRACE_VERSION = 4;
+const TRACE_VERSION = 5;
 
 /**
  * Every candidate fill this run considered, so a wrong outline can be diagnosed
@@ -967,7 +1041,20 @@ async function traceBoundary(lat, lng, area, label = "") {
       while (q.length) {
         const i = q.pop(); count++;
         const x = i % px, y = (i / px) | 0;
-        if (x === 0 || y === 0 || x === px-1 || y === px-1) { touchedEdge = true; break; }
+        // Reaching the image border means this fill escaped the parcel through
+        // a gap in the raster's lines. Note it and KEEP DRAINING — do not
+        // break.
+        //
+        // Breaking here used to leave the leaked region half-painted: the
+        // pixels already claimed kept this fill's id, the pixels still in `q`
+        // stayed at 0. A later seed landing in that unpainted remainder then
+        // started a fresh fill which was walled in by the abandoned one — not
+        // by any real boundary — and so came back a plausible size, closed,
+        // and shaped like nothing on the ground. If it happened to contain the
+        // point it won outright and was drawn as a confident outline. Draining
+        // fully costs one pass over an area we were discarding anyway and
+        // makes the whole leak untouchable by every seed that follows.
+        if (x === 0 || y === 0 || x === px-1 || y === px-1) { touchedEdge = true; continue; }
         for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
           const j = (y+dy)*px + (x+dx);
           if (!region[j] && !solid(j)) { region[j] = id; q.push(j); }
@@ -1028,12 +1115,26 @@ async function traceBoundary(lat, lng, area, label = "") {
       // right, occasionally wrong"; it is inherently a guess among neighbours
       // every time it runs.
       //
-      // So: a fill containing the exact point wins immediately, unconditional
-      // on area or on anything else — only one fill can ever contain a given
-      // pixel, so this cannot itself be ambiguous. Nothing else ever wins.
-      // Official area is still recorded per candidate for the console log,
-      // because it is useful for a human reading `window.__trace` even though
-      // the algorithm no longer acts on it.
+      // So: a fill containing the exact point wins, and nothing else ever
+      // wins. Only one fill can ever contain a given pixel, so containment
+      // cannot itself be ambiguous.
+      //
+      // ONE thing can still veto that winner, and it is not a ranking: a
+      // gross area mismatch. Ranking asks "which of these neighbours is most
+      // likely ours?" and has no defensible answer. This asks a different and
+      // answerable question: "is this a parcel at all?" A fill that holds the
+      // point but covers 30x the registered area has not found our parcel —
+      // it has flowed through a gap in the raster's lines and swallowed a
+      // whole block, our parcel among them. Drawing it puts a confident
+      // outline around a dozen properties. There is no neighbour to choose
+      // between here and no coin to flip; the only two outcomes are "keep a
+      // leak" or "fall through to the pin", and the pin is honest.
+      //
+      // The bounds are deliberately loose (1/4x .. 4x). A correct trace lands
+      // near 1.0 and is only pulled off it by pixel quantisation on a small
+      // parcel; anything outside this range is a different shape, not a
+      // noisier measurement of the right one. Skipped entirely when the
+      // registry gave us no area to compare against.
       const holdsPoint = region[centre] === id;
       let got = null, ratio = null;
       if (area > 0) {
@@ -1044,8 +1145,19 @@ async function traceBoundary(lat, lng, area, label = "") {
         }
         got = Math.abs(s) / 2; ratio = +(got / area).toFixed(3);
       }
+      const leaked = ratio != null && (ratio > 4 || ratio < 0.25);
       __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count, holds: holdsPoint,
-                              got: got == null ? null : Math.round(got), ratio });
+                              got: got == null ? null : Math.round(got), ratio,
+                              rejected: holdsPoint && leaked ? "area" : undefined });
+      if (holdsPoint && leaked) {
+        // The point's own cell is this leak, so no other fill in this window
+        // can contain it. Widening only makes the leak likelier to stay clear
+        // of the border and pass the touchedEdge check, so stop here rather
+        // than escalate into a bigger wrong answer.
+        __traceLog.skipped.leaked++;
+        __traceLog.leakAtePoint = true;
+        return done(null, `fill holding the point is ${ratio}x the registered area — leaked`);
+      }
       if (holdsPoint) return done(gk.map(([x, y]) => fromGk8(x, y)), "holds point");
     }
     // No fill in this window contained the point — try a wider one; a coarser
@@ -1358,7 +1470,12 @@ async function focusAuction(a) {
                                  fillOpacity: opacityVal() });
       layer.bindPopup(auctionPopup(a, { area: a.area }), popupOpts());
       layer.addTo(auctionLayer);
-      drawn.set(a.code, { layer, coords: known, area: a.area, isPoly: true });
+      // The lot's geocoded position IS the cadastre's reference point for this
+      // code — the same vertex /parcel would return — so a cached outline can
+      // still be shown with its point, without a lookup.
+      const pin = (a.lat != null && a.lng != null)
+        ? addRefPoint([a.lat, a.lng], AUCTION_COLOR, `<b>${a.code}</b>`) : null;
+      drawn.set(a.code, { layer, coords: known, area: a.area, isPoly: true, pin });
       renderMeasurements();
       aStatus("");
     } else {
@@ -1367,18 +1484,20 @@ async function focusAuction(a) {
       const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code)).then(r => r.json());
       if (!res.success || !res.coords || !res.coords.length) throw new Error("no geometry");
       let coords = res.coords, traced = false;
+      const anchor = coords[0];              // keep the registry point past tracing
       if (coords.length < 3 && document.getElementById("do-trace").checked) {
         const tr = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, a.code);
         if (tr && tr.length >= 3) { coords = tr; traced = true; }
       }
-      layer = coords.length >= 3
+      const isPoly = coords.length >= 3;
+      layer = isPoly
         ? L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
                               fillOpacity: opacityVal(), dashArray: traced ? "6 4" : null })
-        : L.marker(coords[0], { icon: pinIcon(AUCTION_COLOR) });
+        : L.marker(anchor, { icon: pinIcon(AUCTION_COLOR) });
       layer.bindPopup(auctionPopup(a, res), popupOpts());
       layer.addTo(auctionLayer);
-      drawn.set(a.code, { layer, coords, area: res.area ?? a.area,
-                          isPoly: coords.length >= 3 });
+      const pin = isPoly ? addRefPoint(anchor, AUCTION_COLOR, `<b>${a.code}</b>`) : null;
+      drawn.set(a.code, { layer, coords, area: res.area ?? a.area, isPoly, pin });
       renderMeasurements();
       if (coords.length >= 3) rememberRing(a.code, coords);   // next click is instant
       aStatus("");
@@ -1417,8 +1536,10 @@ function auctionPopup(a, parcel) {
       ${row(t("aStarts"), a.startsAt)}
       ${row(t("aEnds"), a.endsAt ? a.endsAt + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : "") : null)}
       ${row(t("popupArea"), parcel && parcel.area ? fmtArea(parcel.area) : null)}
-    </table>
-    <a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
+    </table>` +
+    (parcel && parcel.exact === false
+      ? `<div style="margin-top:4px"><b style="color:#b45309">${t("unconfirmed")}</b></div>` : "") +
+    `<a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
 // Refetch from the Worker. Filtering is instant and local, so this button is
@@ -1436,6 +1557,7 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-phase").value = "";
   document.getElementById("a-view").checked = false;
   auctionLayer.clearLayers();
+  for (const p of drawn.values()) if (p && p.pin) pointGroup.removeLayer(p.pin);
   drawn.clear();
   renderMeasurements();                 // drop their area / length labels
   aStatus("");
