@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-24-point-plus-polygon">
+<meta name="build" content="2026-08-24-corner-rule">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -267,10 +267,9 @@
     <label class="chk"><input type="checkbox" id="show-area" checked> <span data-i18n="showArea">Show area (m² / ha)</span></label>
     <label class="chk"><input type="checkbox" id="show-len"> <span data-i18n="showLen">Show edge lengths (m)</span></label>
     <label class="chk"><input type="checkbox" id="do-trace" checked> <span data-i18n="doTrace">Trace boundary from cadastre map</span></label>
-    <!-- The cadastre's point and the parcel's outline answer different
-         questions ("which corner does the registry hold?" vs "how far does
-         the parcel run?"), so a parcel that has both now shows both. -->
-    <label class="chk"><input type="checkbox" id="show-point" checked> <span data-i18n="showPoint">Also pin the cadastre point on outlined parcels</span></label>
+    <!-- A parcel with an outline gets a pin at the outline's CENTRE, so the
+         marker and the shape agree about where the parcel is. -->
+    <label class="chk"><input type="checkbox" id="show-point" checked> <span data-i18n="showPoint">Pin the centre of outlined parcels</span></label>
   </fieldset>
 
   <p class="hint" data-i18n-html="hint"></p>
@@ -309,7 +308,7 @@ const I18N = {
     ovParcels:"Հողամասեր", ovLabels:"Հողամասերի պիտակներ", ovBuildings:"Շենքեր", ovBlocks:"Թաղամասեր",
     opacity:"Լցման/շերտի թափանցիկություն",
     showArea:"Ցույց տալ մակերեսը (մ²/հա)", showLen:"Ցույց տալ եզրերի երկարությունը (մ)", doTrace:"Եզրագիծը վերծանել կադաստրի քարտեզից",
-    showPoint:"Եզրագծված հողամասերի վրա նաև ցույց տալ կադաստրի կետը",
+    showPoint:"Ցույց տալ եզրագծված հողամասերի կենտրոնը",
     hint:`Մուտքագրեք կադաստրային ծածկագրերը և սեղմեք <b>Գծել բոլորը</b> — յուրաքանչյուր հողամաս ստանում է իր գույնը՝ պաշտոնական մակերեսով և ընտրովի եզրերի երկարություններով։ Սեղմեք հողամասին՝ մանրամասների համար։ Տվյալները՝ ՀՀ կադաստրի կոմիտեից։`,
     panelToggle:"Ցույց տալ/թաքցնել վահանակը", locateTitle:"Ցույց տալ իմ տեղը",
     locating:"Որոնում…", locAcc:r=>`Տեղորոշում ±${r} մ`,
@@ -321,8 +320,8 @@ const I18N = {
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
     rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։",
+    inferred:"⚠ եզրագիծը ենթադրված է. կադաստրի կետը անկյուն է, և այս հողամասն է միակը, որ դիպչում է կետին և համապատասխանում է մակերեսին",
     notFound:"չի գտնվել", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
-    refPoint:"կադաստրի հենակետ (հողամասի անկյուն)",
     unconfirmed:"⚠ Տեղը հաստատված չէ. կադաստրի որոնումը վերադարձրեց տող, որը այս ծածկագիրը չի պարունակում։",
   },
   en: {
@@ -349,7 +348,7 @@ const I18N = {
     ovParcels:"Parcels", ovLabels:"Parcel labels", ovBuildings:"Buildings", ovBlocks:"Blocks",
     opacity:"Parcel fill / overlay opacity",
     showArea:"Show area (m² / ha)", showLen:"Show edge lengths (m)", doTrace:"Trace boundary from cadastre map",
-    showPoint:"Also pin the cadastre point on outlined parcels",
+    showPoint:"Pin the centre of outlined parcels",
     hint:`Enter cadastral codes and <b>Plot all</b> — each parcel gets its own colour, with its official area and optional edge lengths. Click a parcel for details. Boundaries and layers come live from the State Cadastre Committee of Armenia.`,
     panelToggle:"Show/hide panel", locateTitle:"Show my location",
     locating:"Locating…", locAcc:r=>`Location ±${r} m`,
@@ -361,8 +360,8 @@ const I18N = {
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
     rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).",
+    inferred:"⚠ boundary inferred: the cadastre point is a corner, and this was the only parcel touching it that also matches the registered area",
     notFound:"not found", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
-    refPoint:"cadastre reference point (a corner of the parcel)",
     unconfirmed:"⚠ Location unconfirmed: the cadastre search returned a row that does not carry this code.",
   },
   ru: {
@@ -389,7 +388,7 @@ const I18N = {
     ovParcels:"Участки", ovLabels:"Подписи участков", ovBuildings:"Здания", ovBlocks:"Кварталы",
     opacity:"Прозрачность заливки/слоя",
     showArea:"Показать площадь (м²/га)", showLen:"Показать длины сторон (м)", doTrace:"Обвести границу по карте кадастра",
-    showPoint:"Также показывать опорную точку кадастра на обведённых участках",
+    showPoint:"Показывать центр обведённых участков",
     hint:`Введите кадастровые коды и нажмите <b>Показать все</b> — каждый участок получает свой цвет, с официальной площадью и опциональными длинами сторон. Нажмите на участок для деталей. Данные — Комитет кадастра Армении.`,
     panelToggle:"Показать/скрыть панель", locateTitle:"Показать моё местоположение",
     locating:"Определение…", locAcc:r=>`Местоположение ±${r} м`,
@@ -401,8 +400,8 @@ const I18N = {
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
     rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).",
+    inferred:"⚠ граница выведена косвенно: точка кадастра — угол, и это единственный участок, который её касается и совпадает по площади",
     notFound:"не найдено", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
-    refPoint:"опорная точка кадастра (угол участка)",
     unconfirmed:"⚠ Местоположение не подтверждено: поиск кадастра вернул запись без этого кода.",
   },
 };
@@ -596,35 +595,117 @@ function pinIcon(color) {
   return L.divIcon({ className: "cadastre-pin", html: svg,
                      iconSize: [26, 36], iconAnchor: [13, 34], popupAnchor: [0, -30] });
 }
+// How sure are we of this outline? Solid = the cadastre's own vector geometry.
+// Dashed = traced from the raster and confirmed by containment. Dotted = the
+// corner rule inferred it. Three levels of evidence, three visibly different
+// lines, so a weaker answer never wears a stronger one's clothes.
+const dashFor = (traced, inferred) => inferred ? "2 5" : traced ? "6 4" : null;
 const areaGroup = L.layerGroup().addTo(map);   // area labels
 const lenGroup  = L.layerGroup().addTo(map);   // edge-length labels
 
 /**
- * The cadastre's own reference point, drawn ALONGSIDE an outline rather than
- * instead of it.
+ * A point INSIDE the ring, as far from any edge as it can get — the parcel's
+ * visual centre.
  *
- * These are two different claims about a parcel and conflating them is what
- * made a correct lookup look like a wrong one. The outline is reconstructed by
- * us from the raster and says how far the parcel runs; the point is what the
- * registry actually holds and is a CORNER of the geometry, not its centre. On
- * a long parcel — a street, a strip, an access road — that corner sits at one
- * end, hundreds of metres from anything a person would call "the location", so
- * showing it alone reads as a wrong answer. Showing both at once makes the
- * relationship legible: the pin is a vertex OF the shape next to it.
+ * Not the centroid and not the bounding-box centre: for an L-shaped lot, a
+ * crescent along a bend in the road, or any parcel wrapped around a
+ * neighbour's plot, both of those land outside the shape, which is exactly the
+ * failure a pin is supposed to avoid. This is the pole of inaccessibility,
+ * found the standard way (Vladimir Agafonkin's polylabel): quarter the
+ * bounding box, keep a queue of cells ordered by the best distance-to-edge
+ * still reachable inside them, and subdivide the most promising cell until the
+ * remaining uncertainty is under `tol`. Cells that cannot beat the best point
+ * found so far are dropped, so this stays cheap on the few-dozen-vertex rings
+ * we deal with.
  *
- * It lives in its own group, not inside the parcel layer, on purpose:
+ * Works in raw lat/lng degrees. At Armenia's latitude a degree of longitude is
+ * about 0.76 of a degree of latitude, so distances here are slightly squashed
+ * east-west — irrelevant for choosing a point, since every candidate is
+ * squashed by the same factor and only their ORDER matters.
+ */
+function pointInRing(ring, tol) {
+  // Signed distance from p to the ring: positive inside, negative outside.
+  const sd = ([px, py]) => {
+    let inside = false, minSq = Infinity;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [ay, ax] = ring[i], [by, bx] = ring[j];
+      if ((ay > py) !== (by > py) && px < (bx - ax) * (py - ay) / (by - ay) + ax)
+        inside = !inside;
+      // squared distance to segment (a,b)
+      let dx = bx - ax, dy = by - ay;
+      if (dx || dy) {
+        const tt = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+        if (tt > 1) { dx = px - bx; dy = py - by; }
+        else if (tt > 0) { dx = px - (ax + dx * tt); dy = py - (ay + dy * tt); }
+        else { dx = px - ax; dy = py - ay; }
+      } else { dx = px - ax; dy = py - ay; }
+      minSq = Math.min(minSq, dx * dx + dy * dy);
+    }
+    return (inside ? 1 : -1) * Math.sqrt(minSq);
+  };
+
+  let minY = Infinity, minX = Infinity, maxY = -Infinity, maxX = -Infinity;
+  for (const [y, x] of ring) {
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+  }
+  const w = maxX - minX, h = maxY - minY;
+  const cell = Math.min(w, h);
+  if (cell === 0) return [minY, minX];
+  tol = tol || cell / 1000;
+
+  // A cell is [x, y, half-size, its own distance, the best any point in it
+  // could have] — that ceiling is what makes the search admissible.
+  const mk = (x, y, half) => { const d = sd([x, y]); return { x, y, half, d, max: d + half * Math.SQRT2 }; };
+  const queue = [];
+  let r = cell / 2;
+  for (let x = minX + r; x < maxX; x += cell) for (let y = minY + r; y < maxY; y += cell)
+    queue.push(mk(x, y, r));
+
+  // Seed with the centroid, so a convex parcel usually converges immediately.
+  let best = mk((minX + maxX) / 2, (minY + maxY) / 2, 0);
+  let guard = 0;
+  while (queue.length && ++guard < 20000) {
+    let bi = 0;                                   // pop the most promising cell
+    for (let i = 1; i < queue.length; i++) if (queue[i].max > queue[bi].max) bi = i;
+    const c = queue.splice(bi, 1)[0];
+    if (c.d > best.d) best = c;
+    if (c.max - best.d <= tol) continue;          // cannot beat the winner
+    const half = c.half / 2;
+    queue.push(mk(c.x - half, c.y - half, half), mk(c.x + half, c.y - half, half),
+               mk(c.x - half, c.y + half, half), mk(c.x + half, c.y + half, half));
+  }
+  return [best.y, best.x];
+}
+// Ring coordinates are [lat, lng]; a tolerance of 1e-6 deg is ~0.1 m, well
+// under the tracer's own ~0.2-0.5 m pixel accuracy.
+const parcelCentre = (coords) => coords && coords.length >= 3
+  ? pointInRing(coords, 1e-6) : (coords && coords[0]) || null;
+
+/**
+ * The parcel's pin.
+ *
+ * It marks the CENTRE of the outline when there is one. It used to be dropped
+ * on the cadastre's own reference point, which is the first vertex of the
+ * registry geometry — a CORNER. On a long or bent parcel that corner sits at
+ * one end, often across a street from the parcel body, and a pin there reads
+ * as a wrong answer no matter how correct the lookup was. A pin means "the
+ * thing is here", so it goes where the thing is.
+ *
+ * With no outline the vertex is all that exists, and the caller draws it as
+ * the parcel layer itself; the popup says plainly that it is a corner.
+ *
+ * The pin lives in its own group, not inside the parcel layer, on purpose:
  *   - fitBounds() still frames the parcel, not a marker's icon box
  *   - setStyle() in applyOpacity() keeps meeting only polygons
  *   - the toggle is one addLayer/removeLayer, with nothing to redraw
- * A parcel with no outline at all is unchanged: there the pin IS the result,
- * and it is drawn by the caller as the parcel layer itself.
  */
 const pointGroup = L.layerGroup().addTo(map);
 const wantPoint = () => document.getElementById("show-point").checked;
 function addRefPoint(latlng, color, popupBody) {
   if (!latlng) return null;
   const m = L.marker(latlng, { icon: pinIcon(color), zIndexOffset: 500 });
-  m.bindPopup(`${popupBody}<br><i>${t("refPoint")}</i>`, popupOpts());
+  m.bindPopup(popupBody, popupOpts());
   m.addTo(pointGroup);
   return m;
 }
@@ -658,6 +739,9 @@ function popupHtml(p) {
     (p.isPoly ? `<br>${t("popupPerim")}: ${fmtLen(p.perim)}<br>${t("popupVerts")}: ${p.coords.length}`
               : `<br><i>${t("pointOnly")}</i>`) +
     (p.traced ? `<br><i>${t("traced")}</i>` : "") +
+    // An inferred outline is weaker evidence than a traced-by-containment one
+    // and must never look the same. Dotted on the map, spelled out here.
+    (p.inferred ? `<br><b style="color:#b45309">${t("inferred")}</b>` : "") +
     // exact === false means the worker matched a row that does not carry this
     // code. It is not refused (see pickRow) but it must not look like a fact.
     (p.exact === false ? `<br><b style="color:#b45309">${t("unconfirmed")}</b>` : "") +
@@ -675,7 +759,11 @@ function renderMeasurements() {
   const targets = [...plotted.filter(p => p.ok && p.isPoly), ...auctionParcels];
   targets.forEach(p => {
     if (showArea) {
-      const c = p.layer.getBounds ? p.layer.getBounds().getCenter() : p.layer.getLatLng();
+      // The same interior point the pin uses. The bounding-box centre it used
+      // to use falls outside an L-shaped or crescent parcel, putting the area
+      // label on a neighbour's land.
+      const c = p.centre || parcelCentre(p.coords)
+        || (p.layer.getBounds ? p.layer.getBounds().getCenter() : p.layer.getLatLng());
       L.marker(c, { interactive:false,
         icon:L.divIcon({ className:"mlabel", html:fmtArea(p.area), iconSize:null }) }).addTo(areaGroup);
     }
@@ -736,29 +824,33 @@ async function plotAll(skipFit = false) {
       if (!res) { plotted.push({ code, ok:false }); continue; }
       const coords = res.coords;
       const color = PALETTE[colorIdx++ % PALETTE.length];
-      // Hold the registry's own point before tracing overwrites `coords` in
-      // place. It is the only thing here the cadastre actually asserts, and
-      // once an outline exists it is still worth drawing next to it — see
-      // addRefPoint().
-      const anchor = coords[0];
+      // Hold the registry's own vertex before tracing overwrites `coords` in
+      // place. It is the fallback position for a parcel that never gets an
+      // outline; once there IS an outline the pin goes to its centre instead.
+      const vertex = coords[0];
       // The cadastre currently serves only a single vertex for most parcels
       // ("Parcel geometry service is disabled"), so fall back to a marker.
-      let isPoly = coords.length >= 3, traced = false;
+      let isPoly = coords.length >= 3, traced = false, inferred = false;
       if (!isPoly && document.getElementById("do-trace").checked) {
         const t = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, code);
-        if (t && t.length >= 3) { coords.length = 0; coords.push(...t); isPoly = true; traced = true; }
+        if (t && t.length >= 3) {
+          inferred = !!t.inferred;
+          coords.length = 0; coords.push(...t); isPoly = true; traced = true;
+        }
       }
       const layer = isPoly
         ? L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal(),
-                              dashArray: traced ? "6 4" : null }).addTo(map)
-        : L.marker(anchor, { icon: pinIcon(color) }).addTo(map);
-      const p = { code, coords, layer, ok:true, color, isPoly, traced, anchor, exact: res.exact,
+                              dashArray: dashFor(traced, inferred) }).addTo(map)
+        : L.marker(vertex, { icon: pinIcon(color) }).addTo(map);
+      const centre = isPoly ? parcelCentre(coords) : vertex;
+      const p = { code, coords, layer, ok:true, color, isPoly, traced, inferred, centre, exact: res.exact,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
                   perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
       layer.bindPopup(popupHtml(p), popupOpts());
-      // Outline AND point, not one or the other. Only when there is an outline:
-      // without one the pin above already IS the parcel layer.
-      if (isPoly) p.pin = addRefPoint(anchor, color, `<b>${code}</b>`);
+      // Outline AND pin, not one or the other — and the pin sits at the
+      // outline's centre. Only when there is an outline: without one the
+      // marker above already IS the parcel layer.
+      if (isPoly) p.pin = addRefPoint(centre, color, popupHtml(p));
       plotted.push(p);
       allBounds.push(isPoly ? layer.getBounds() : L.latLngBounds([coords[0], coords[0]]).pad(0.002));
     } catch (err) {
@@ -964,8 +1056,14 @@ function simplify(pts, tol) {                     // Douglas-Peucker
  * won however large it was, so a leak through a gap in the raster lines could
  * be drawn as a boundary around an entire block. Rings traced under either
  * are indistinguishable from good ones once in localStorage.
+ *
+ * Bumped 6: 2026-08-24. The corner rule is back (see traceBoundary) after
+ * 7ed76c7 left most parcels with no outline at all, and it now requires a
+ * candidate cell to TOUCH the registry's vertex — a constraint the old
+ * area-ranking never applied. Rings cached in the hours between the two
+ * changes are either absent or were traced under the old, unconstrained rule.
  */
-const TRACE_VERSION = 5;
+const TRACE_VERSION = 6;
 
 /**
  * Every candidate fill this run considered, so a wrong outline can be diagnosed
@@ -980,11 +1078,16 @@ async function traceBoundary(lat, lng, area, label = "") {
   const [CX, CY] = toGk8(lat, lng);               // work in the native grid
   __traceLog = { label, lat, lng, area, v: TRACE_VERSION, tries: [] };
   window.__trace = __traceLog;
-  const done = (ring, why) => {
+  // `inferred` marks a ring the corner rule produced rather than containment.
+  // It rides out on the array itself so every caller — including the ring
+  // cache — keeps it without a second return value to thread through.
+  const done = (ring, why, inferred = false) => {
     __traceLog.result = why;
+    __traceLog.inferred = inferred;
     console.log(`[trace v${TRACE_VERSION}] ${label || lat + "," + lng} area=${area} -> ${why}`
       + ` | onLine=${__traceLog.centreOnLine} skipped=${JSON.stringify(__traceLog.skipped)}`
       + ` | ${JSON.stringify(__traceLog.tries)}`);
+    if (ring && inferred) ring.inferred = true;
     return ring;
   };
   for (const mult of [4, 8, 16]) {                // widen if the parcel overflows
@@ -1025,6 +1128,22 @@ async function traceBoundary(lat, lng, area, label = "") {
     __traceLog.centreOnLine = solid(centre);
     __traceLog.skipped = { onLine: 0, leaked: 0, tiny: 0, shortRing: 0 };
     let fills = 0;
+
+    // How close a fill has to come to the cadastre's point to be considered
+    // ours at all. About a metre, never under 3 px so a thick drawn line does
+    // not push a genuine neighbour out of reach.
+    const touchR = Math.max(3, Math.round(1.0 / perPx));
+    const touchesPoint = (id) => {
+      for (let dy = -touchR; dy <= touchR; dy++)
+        for (let dx = -touchR; dx <= touchR; dx++) {
+          if (dx*dx + dy*dy > touchR*touchR) continue;
+          const y = mid + dy, x = mid + dx;
+          if (x < 0 || y < 0 || x >= px || y >= px) continue;
+          if (region[y*px + x] === id) return true;
+        }
+      return false;
+    };
+    const candidates = [];      // cells that could be ours, this window
 
     for (const [ox, oy] of seeds) {
       const sxp = mid + ox, syp = mid + oy;
@@ -1095,46 +1214,63 @@ async function traceBoundary(lat, lng, area, label = "") {
         bbox[0] + (x / px) * (bbox[2] - bbox[0]),
         bbox[3] - (y / px) * (bbox[3] - bbox[1])]);
 
-      // Does this fill contain the cadastre's own point?
+      // Which cell is ours?
       //
-      // AREA-BASED SELECTION IS GONE. It used to rank non-containing fills by
-      // how closely their traced area matched the official one, on the theory
-      // that a close-enough match was good evidence. It is not: two real,
-      // independent incidents proved it wrong.
-      //   02-082-0082-0004 (2000.23 m²) / -0005 (2008.47 m²), 45 m apart, 0.4%
-      //   02-082-0009-0037 (2000.05 m²) / -0007 (2000.12 m²), 50 m apart, 0.03%
-      // In both, the two real parcels are close enough in size that "closest
-      // area" is a coin flip, not a signal — and the coin landed on the wrong
-      // neighbour BOTH times, drawn as a confident, solid-looking shape with
-      // nothing to say it might be wrong. There is a structural reason area
-      // can never be trusted here, not just bad luck: this branch is only
-      // reached when the point lies exactly ON a boundary line (if it were
-      // inside a parcel, that parcel's own fill would already have won by
-      // containment, below) — so every single candidate considered here comes
-      // from a corner where multiple parcels touch. It is never "probably
-      // right, occasionally wrong"; it is inherently a guess among neighbours
-      // every time it runs.
+      // Two rules, in order, and the difference between them matters.
       //
-      // So: a fill containing the exact point wins, and nothing else ever
-      // wins. Only one fill can ever contain a given pixel, so containment
-      // cannot itself be ambiguous.
+      // 1. CONTAINMENT. A fill that contains the cadastre's point is ours,
+      //    full stop — only one fill can ever contain a given pixel, so this
+      //    cannot be ambiguous. It is a deduction, not a preference.
       //
-      // ONE thing can still veto that winner, and it is not a ranking: a
-      // gross area mismatch. Ranking asks "which of these neighbours is most
-      // likely ours?" and has no defensible answer. This asks a different and
-      // answerable question: "is this a parcel at all?" A fill that holds the
-      // point but covers 30x the registered area has not found our parcel —
-      // it has flowed through a gap in the raster's lines and swallowed a
-      // whole block, our parcel among them. Drawing it puts a confident
-      // outline around a dozen properties. There is no neighbour to choose
-      // between here and no coin to flip; the only two outcomes are "keep a
-      // leak" or "fall through to the pin", and the pin is honest.
+      //    One thing vetoes it, and it is not a ranking: a gross area
+      //    mismatch. A fill that holds the point but covers 30x the registered
+      //    area has not found our parcel, it has flowed through a gap in the
+      //    raster's lines and swallowed a whole block with our parcel inside
+      //    it. Bounds are loose (1/4x..4x) because a correct trace lands near
+      //    1.0 and only pixel quantisation pulls it off; anything outside that
+      //    is a different shape, not a noisier measurement of the right one.
       //
-      // The bounds are deliberately loose (1/4x .. 4x). A correct trace lands
-      // near 1.0 and is only pulled off it by pixel quantisation on a small
-      // parcel; anything outside this range is a different shape, not a
-      // noisier measurement of the right one. Skipped entirely when the
-      // registry gave us no area to compare against.
+      // 2. THE CORNER CASE. Very often the point sits exactly ON a drawn line
+      //    — it is the first VERTEX of the registry geometry, and on a corner
+      //    lot that is a street junction where several parcels meet. No fill
+      //    can contain it, so rule 1 decides nothing, and that is the ordinary
+      //    case rather than an exotic one.
+      //
+      //    From 2026-08-24 11:25 (commit 7ed76c7) until this change, that
+      //    meant no outline at all: the previous area-ranking fallback was
+      //    deleted outright and nothing replaced it, so most parcels stopped
+      //    rendering as shapes and became bare pins. The deletion was aimed at
+      //    a real defect — two confirmed wrong-but-confident boundaries —
+      //    02-082-0082-0004 / -0005 (2000.23 / 2008.47 m², 45 m apart) and
+      //    02-082-0009-0037 / -0007 (2000.05 / 2000.12 m², 50 m apart), where
+      //    "closest area" was a coin flip between neighbours built to the same
+      //    size on purpose.
+      //
+      //    But it removed the wrong half. The old rule's actual hole was that
+      //    it ranked cells it had no business considering AT ALL: any fill
+      //    within 0.5x..2x of the area could win, however far from the point
+      //    it lay, and its ambiguity guard only fired when two rivals showed
+      //    up. A lone neighbour 45 m away won unopposed, and that is precisely
+      //    what both incidents look like.
+      //
+      //    So the constraint that was missing is not a better ranking, it is a
+      //    HARD geometric fact that was never used: the cadastre's point is a
+      //    VERTEX OF OUR PARCEL. Our cell must therefore touch it. A cell that
+      //    does not come within ~1 m of that point cannot be ours no matter
+      //    how well its area fits, and is not a candidate.
+      //
+      //    Among cells that do touch it, area still has to agree, and then
+      //    exactly ONE must survive. Two survivors is the genuine four-cells-
+      //    at-a-corner tie the deletion was worried about, and that still
+      //    refuses — with no 5% slack this time, because "how close is too
+      //    close" was never answerable. One survivor is a cell that touches
+      //    our vertex and matches our registered area while no neighbour at
+      //    that junction does both, which is an inference from two independent
+      //    facts rather than a preference between look-alikes.
+      //
+      //    It is still weaker evidence than containment, so it is never
+      //    presented as equal: the caller draws it dotted and the popup says
+      //    the boundary is inferred. Confidence is shown, not implied.
       const holdsPoint = region[centre] === id;
       let got = null, ratio = null;
       if (area > 0) {
@@ -1145,28 +1281,56 @@ async function traceBoundary(lat, lng, area, label = "") {
         }
         got = Math.abs(s) / 2; ratio = +(got / area).toFixed(3);
       }
-      const leaked = ratio != null && (ratio > 4 || ratio < 0.25);
+      const leaked  = ratio != null && (ratio > 4 || ratio < 0.25);
+      const touches = holdsPoint || touchesPoint(id);
+      // The band is TIGHT, and that is the whole point of it. The old rule
+      // used 0.5x..2x, which at a real junction admits every neighbour, so
+      // "exactly one survivor" would essentially never happen and the corner
+      // rule would refuse as often as no rule at all.
+      //
+      // A correct trace reads slightly SMALL by construction — it follows the
+      // inside of a drawn line, losing about (perimeter x half the line
+      // width): ~1% on a 40 m lot, ~5% on a 10 m one. So 0.85..1.15 covers
+      // every honest trace while excluding a neighbour more than ~15%
+      // different in size. Neighbours closer than that are not separated by
+      // area at all and the rule refuses, which is correct: that is the
+      // look-alike case both known failures came from.
+      const fitsArea = ratio != null && ratio >= 0.85 && ratio <= 1.15;
       __traceLog.tries.push({ mult, seed: `${ox},${oy}`, px: count, holds: holdsPoint,
-                              got: got == null ? null : Math.round(got), ratio,
-                              rejected: holdsPoint && leaked ? "area" : undefined });
+                              touches, got: got == null ? null : Math.round(got), ratio,
+                              rejected: holdsPoint && leaked ? "leak"
+                                      : !touches ? "does not touch the point"
+                                      : (ratio != null && !fitsArea) ? "area" : undefined });
       if (holdsPoint && leaked) {
-        // The point's own cell is this leak, so no other fill in this window
-        // can contain it. Widening only makes the leak likelier to stay clear
-        // of the border and pass the touchedEdge check, so stop here rather
-        // than escalate into a bigger wrong answer.
+        // The point's own cell is a leak. Nothing else in this window can
+        // contain the point either, so fall through to the corner rule and
+        // then to a wider window.
         __traceLog.skipped.leaked++;
         __traceLog.leakAtePoint = true;
-        return done(null, `fill holding the point is ${ratio}x the registered area — leaked`);
+        continue;
       }
       if (holdsPoint) return done(gk.map(([x, y]) => fromGk8(x, y)), "holds point");
+      // A candidate for the corner rule. No official area to check against
+      // means area cannot confirm anything, so it cannot be a candidate
+      // either — touching alone is true of every cell at the junction.
+      if (touches && fitsArea) candidates.push({ gk, ratio, seed: `${ox},${oy}` });
     }
-    // No fill in this window contained the point — try a wider one; a coarser
-    // raster sometimes reads the same pixel as off the line where a finer one
-    // read it as on the line. If every width comes up empty, the point is
-    // genuinely a shared corner and there is nothing left to try: show the
-    // point rather than a guess.
+
+    // Corner rule: exactly one cell touching the point also fits the area.
+    if (candidates.length === 1) {
+      const c = candidates[0];
+      return done(c.gk.map(([x, y]) => fromGk8(x, y)), `inferred at corner (ratio ${c.ratio})`, true);
+    }
+    if (candidates.length > 1) {
+      __traceLog.ambiguous = candidates.map(c => c.ratio);
+      return done(null, `ambiguous: ${candidates.length} cells touch the point and fit `
+        + `the registered area (ratios ${candidates.map(c => c.ratio).join(", ")})`);
+    }
+    // Nothing at this width — try a wider one; a coarser raster sometimes
+    // reads a pixel as off the line where a finer one read it as on. If every
+    // width comes up empty there is nothing left to try: show the point.
   }
-  return done(null, "no cell contains the point at any zoom");
+  return done(null, "no cell contains or plausibly matches the point at any zoom");
 }
 
 // ---- Show my position (mobile-friendly geolocation) ---------------------
@@ -1443,9 +1607,12 @@ try {                                   // drop rings from superseded tracers
 const ringCache = (() => {
   try { return JSON.parse(localStorage.getItem(RING_KEY) || "{}"); } catch { return {}; }
 })();
+// The `inferred` flag would not survive JSON.stringify on a bare array, and a
+// cached inferred ring redrawn as a confident one is exactly the confusion the
+// dotted style exists to prevent. Store it alongside.
 function rememberRing(code, ring) {
   try {
-    ringCache[code] = ring;
+    ringCache[code] = ring.inferred ? { ring, inferred: true } : ring;
     const keys = Object.keys(ringCache);
     if (keys.length > 400) delete ringCache[keys[0]];      // keep it bounded
     localStorage.setItem(RING_KEY, JSON.stringify(ringCache));
@@ -1462,20 +1629,24 @@ async function focusAuction(a) {
   let layer = (drawn.get(a.code) || {}).layer;
   if (!layer) {
     // Already known? Draw immediately, no network at all.
+    const cached = ringCache[a.code];
+    const knownInferred = !!(cached && !Array.isArray(cached) && cached.inferred);
     const known = (a.ring && a.ring.length >= 3) ? a.ring
                 : (a.geom ? (() => { try { return JSON.parse(a.geom); } catch { return null; } })() : null)
-                || ringCache[a.code];
+                || (cached && (Array.isArray(cached) ? cached : cached.ring));
     if (known && known.length >= 3) {
       layer = L.polygon(known, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
-                                 fillOpacity: opacityVal() });
-      layer.bindPopup(auctionPopup(a, { area: a.area }), popupOpts());
+                                 fillOpacity: opacityVal(),
+                                 dashArray: dashFor(true, knownInferred) });
+      layer.bindPopup(auctionPopup(a, { area: a.area, inferred: knownInferred }), popupOpts());
       layer.addTo(auctionLayer);
-      // The lot's geocoded position IS the cadastre's reference point for this
-      // code — the same vertex /parcel would return — so a cached outline can
-      // still be shown with its point, without a lookup.
-      const pin = (a.lat != null && a.lng != null)
-        ? addRefPoint([a.lat, a.lng], AUCTION_COLOR, `<b>${a.code}</b>`) : null;
-      drawn.set(a.code, { layer, coords: known, area: a.area, isPoly: true, pin });
+      // The centre comes from the ring itself, so a cached outline needs no
+      // lookup to be pinned — and never inherits the lot's stored vertex,
+      // which is a corner and often across the street from the parcel.
+      const pin = addRefPoint(parcelCentre(known), AUCTION_COLOR,
+                              auctionPopup(a, { area: a.area, inferred: knownInferred }));
+      drawn.set(a.code, { layer, coords: known, area: a.area, isPoly: true, pin,
+                          centre: parcelCentre(known) });
       renderMeasurements();
       aStatus("");
     } else {
@@ -1483,23 +1654,29 @@ async function focusAuction(a) {
     try {
       const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code)).then(r => r.json());
       if (!res.success || !res.coords || !res.coords.length) throw new Error("no geometry");
-      let coords = res.coords, traced = false;
-      const anchor = coords[0];              // keep the registry point past tracing
+      let coords = res.coords, traced = false, inferred = false;
+      const vertex = coords[0];              // fallback if no outline is found
       if (coords.length < 3 && document.getElementById("do-trace").checked) {
         const tr = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, a.code);
-        if (tr && tr.length >= 3) { coords = tr; traced = true; }
+        if (tr && tr.length >= 3) { coords = tr; traced = true; inferred = !!tr.inferred; }
       }
       const isPoly = coords.length >= 3;
       layer = isPoly
         ? L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
-                              fillOpacity: opacityVal(), dashArray: traced ? "6 4" : null })
-        : L.marker(anchor, { icon: pinIcon(AUCTION_COLOR) });
-      layer.bindPopup(auctionPopup(a, res), popupOpts());
+                              fillOpacity: opacityVal(), dashArray: dashFor(traced, inferred) })
+        : L.marker(vertex, { icon: pinIcon(AUCTION_COLOR) });
+      layer.bindPopup(auctionPopup(a, { ...res, inferred }), popupOpts());
       layer.addTo(auctionLayer);
-      const pin = isPoly ? addRefPoint(anchor, AUCTION_COLOR, `<b>${a.code}</b>`) : null;
-      drawn.set(a.code, { layer, coords, area: res.area ?? a.area, isPoly, pin });
+      const pin = isPoly
+        ? addRefPoint(parcelCentre(coords), AUCTION_COLOR,
+                      auctionPopup(a, { ...res, inferred })) : null;
+      drawn.set(a.code, { layer, coords, area: res.area ?? a.area, isPoly, pin,
+                          centre: isPoly ? parcelCentre(coords) : vertex });
       renderMeasurements();
-      if (coords.length >= 3) rememberRing(a.code, coords);   // next click is instant
+      if (coords.length >= 3) {                    // next click is instant
+        if (inferred) coords.inferred = true;
+        rememberRing(a.code, coords);
+      }
       aStatus("");
     } catch (e) { aStatus(t("aNoGeom")); return; }
     }
@@ -1539,6 +1716,8 @@ function auctionPopup(a, parcel) {
     </table>` +
     (parcel && parcel.exact === false
       ? `<div style="margin-top:4px"><b style="color:#b45309">${t("unconfirmed")}</b></div>` : "") +
+    (parcel && parcel.inferred
+      ? `<div style="margin-top:4px"><b style="color:#b45309">${t("inferred")}</b></div>` : "") +
     `<a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
