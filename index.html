@@ -704,6 +704,26 @@ const parcelCentre = (coords) => coords && coords.length >= 3
   ? pointInRing(coords, 1e-6) : (coords && coords[0]) || null;
 
 /**
+ * Open a polygon's popup at the parcel's centre, not where the pointer landed.
+ *
+ * Leaflet anchors a shape's popup at the click point, which for a 17-hectare
+ * parcel means the panel hangs off whichever edge you happened to touch, with
+ * its tail pointing at a spot that is not the parcel's position and looks
+ * exactly like a second, misplaced marker. It was reported as one.
+ *
+ * The centre is already computed for the pin; reusing it costs nothing and
+ * makes the popup and the pin agree about where the parcel is.
+ */
+function popupAtCentre(layer, centre) {
+  if (!centre) return layer;
+  layer.on("click", (e) => {
+    if (e && e.originalEvent) L.DomEvent.stop(e.originalEvent);
+    layer.openPopup(centre);
+  });
+  return layer;
+}
+
+/**
  * The parcel's pin.
  *
  * It marks the CENTRE of the outline when there is one. It used to be dropped
@@ -768,7 +788,20 @@ async function fetchPolygon(code) {
   return { ok: false, reason: "missing" };
 }
 
-function clearAll() {
+/**
+ * @param {boolean} alsoInput - clear the typed codes and the URL as well.
+ *
+ * plotAll() calls this to wipe the previous drawing before making a new one,
+ * and must NOT lose the codes it is about to plot. The Clear BUTTON means
+ * something stronger: forget this search entirely.
+ *
+ * The distinction matters because of buildShareURL(), which falls back to the
+ * typed text when nothing is plotted — deliberately, so a code you have typed
+ * but not yet drawn can still be shared. The side effect was that Clear
+ * removed the parcel from the map and left the code in the box, so the address
+ * bar kept it and a reload brought the old search straight back.
+ */
+function clearAll(alsoInput = false) {
   plotted.forEach(p => p.layer && map.removeLayer(p.layer));
   plotted = [];
   areaGroup.clearLayers(); lenGroup.clearLayers();
@@ -779,6 +812,12 @@ function clearAll() {
     for (const p of drawn.values()) if (p && p.pin) p.pin.addTo(pointGroup);
   document.getElementById("legend").innerHTML = "";
   status("");
+  if (alsoInput) {
+    document.getElementById("codes").value = "";
+    // Rewrite the address bar now, rather than waiting for the next map move.
+    // replaceState, not push: clearing is not a place to go Back to.
+    syncURL();
+  }
 }
 
 function popupHtml(p) {
@@ -929,7 +968,7 @@ async function plotAll(skipFit = false) {
 }
 
 document.getElementById("find").onclick = () => plotAll();
-document.getElementById("clear").onclick = clearAll;
+document.getElementById("clear").onclick = () => clearAll(true);
 document.getElementById("show-area").onchange = () => { renderMeasurements(); commit(); };
 document.getElementById("show-len").onchange = () => { renderMeasurements(); commit(); };
 document.getElementById("show-point").onchange = () => { syncPointGroup(); commit(); };
@@ -1562,8 +1601,34 @@ const amount = (label, v, cls = "") => v == null ? "" :
 // the finished group. statusCode is the crawler's, but a deadline already past
 // wins: that row may simply not have been re-read since it expired.
 const PHASE_RANK = { current: 0, upcoming: 1, finished: 2 };
+
+/**
+ * The deadline, or null when the source contradicts itself.
+ *
+ * e-auctions.am publishes some lots with an end BEFORE their start:
+ *
+ *   3930   մեկնարկ 2026-09-07 11:00   ավարտ 2026-07-10 11:00
+ *   4373   մեկնարկ 2026-09-28 10:00   ավարտ 2025-10-01 10:00
+ *
+ * Those are the only two dates on each page, so nothing here misread them —
+ * the publisher is wrong. Believing the end date anyway marks both auctions
+ * FINISHED, and an auction that opens next month is shown as closed, greyed
+ * out and sorted to the bottom. A date that cannot be true is worse than no
+ * date: it is a wrong answer with no visible uncertainty.
+ *
+ * The value stays in the database exactly as published — that is what the
+ * source says, and clean.py reports the disagreement — but nothing draws a
+ * conclusion from it.
+ */
+function endsAtOf(a) {
+  const e = a.endsAt, st = a.startsAt;
+  if (!e) return null;
+  if (st && String(e) <= String(st)) return null;   // ISO strings sort correctly
+  return e;
+}
+
 function phaseOf(a) {
-  const d = daysLeft(a.endsAt);
+  const d = daysLeft(endsAtOf(a));
   // A sold price means the auction is over, whatever the stored status says.
   // Lots that never published a deadline cannot be closed by the crawler's
   // date sweep, so ~20 sold lots were sitting in the "not started" group with
@@ -1694,7 +1759,7 @@ function renderAuctions() {
     const a = codeKey(x.code), b = codeKey(y.code);
     if (!a !== !b) return a ? -1 : 1;
     if (a !== b) return a < b ? -1 : 1;
-    return String(x.endsAt || "").localeCompare(String(y.endsAt || ""));
+    return String(endsAtOf(x) || "").localeCompare(String(endsAtOf(y) || ""));
   });
 
   // Pins for everything listed, or none at all. Painted from `rows` after all
@@ -1706,7 +1771,7 @@ function renderAuctions() {
   // draws from the database instead of waiting on the cadastre.
   prefetchStored(rows.map(a => a.code).filter(Boolean));
   for (const a of rows) {
-    const d = daysLeft(a.endsAt);
+    const d = daysLeft(endsAtOf(a));
     const ph = phaseOf(a);
     const el = document.createElement("div");
     el.className = "acard ph-" + ph + (a.code ? "" : " nocode");
@@ -1722,7 +1787,7 @@ function renderAuctions() {
       // A closed lot gets its end date, never a countdown — "today" on an
       // auction that ended last month reads as a live deadline.
       (ph === "finished"
-        ? `<span><span class="lbl">${t("aEnds")}</span> ${String(a.endsAt || "").slice(0, 10)}</span>`
+        ? `<span><span class="lbl">${t("aEnds")}</span> ${String(endsAtOf(a) || "").slice(0, 10)}</span>`
         : d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
             d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>`
         : a.startsAt ? `<span><span class="lbl">${t("aStarts")}</span> ${
@@ -1842,6 +1907,7 @@ async function focusAuction(a) {
       // lookup to be pinned — and never inherits the lot's stored vertex,
       // which is a corner and often across the street from the parcel.
       const centre = parcelCentre(known);
+      popupAtCentre(layer, centre);
       drawn.set(a.code, { layer, coords: known, area, isPoly: true, centre,
                           pin: addRefPoint(centre, AUCTION_COLOR, popup) });
       renderMeasurements();
@@ -1870,6 +1936,7 @@ async function focusAuction(a) {
             layer.bindPopup(popup, popupOpts());
             layer.addTo(auctionLayer);
             const centre = parcelCentre(res.coords);
+            popupAtCentre(layer, centre);
             drawn.set(a.code, { layer, coords: res.coords, area: res.area ?? area,
                                 isPoly: true, centre,
                                 pin: addRefPoint(centre, AUCTION_COLOR, popup) });
@@ -1904,6 +1971,7 @@ async function focusAuction(a) {
         layer.bindPopup(popup, popupOpts());
         layer.addTo(auctionLayer);
         const centre = isPoly ? parcelCentre(coords) : vertex;
+        if (isPoly) popupAtCentre(layer, centre);
         drawn.set(a.code, { layer, coords, area, isPoly, centre,
                             pin: isPoly ? addRefPoint(centre, AUCTION_COLOR, popup) : null });
         renderMeasurements();
@@ -1993,6 +2061,7 @@ document.getElementById("aClear").onclick = () => {
   renderMeasurements();                 // drop their area / length labels
   aStatus("");
   renderAuctions();                     // back to the unfiltered list
+  syncURL();                            // and an address bar that agrees
 };
 for (const id of ["a-phase", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
 // Filter as you type — the list is already in memory, so there is nothing to wait for.
