@@ -310,6 +310,7 @@ const I18N = {
     aQueryPh:"Լոտի համար, ծածկագիր կամ հասցե",
     aInView:"Քարտեզի տեսանելի հատվածում", aRefresh:"↻ Թարմացնել", aNone:"Աճուրդներ չեն գտնվել։",
     aNoneInView:"Այս տեսադաշտում աճուրդներ չկան։ Հեռացրեք խոշորացումը կամ հանեք նշումը։",
+    aNoOutline:"Եզրագիծը չստացվեց՝ ", aTraceOff:"եզրագծի գծումն անջատված է",
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
     aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoGeo:"Դիրքերը դեռ հաշվարկված չեն կադաստրում։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
     aCode:"Կադաստրային ծածկագիր", aSold:"Վաճառված է", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
@@ -353,6 +354,7 @@ const I18N = {
     aQueryPh:"Lot number, cadastral code or address",
     aInView:"In current map view", aRefresh:"↻ Refresh", aNone:"No auctions found.",
     aNoneInView:"No auctions in this view. Zoom out, or untick the box above.",
+    aNoOutline:"No outline: ", aTraceOff:"boundary tracing is switched off",
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
     aNoCode:"No cadastral code — opening the lot page.", aNoGeo:"Positions not resolved from the cadastre yet.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
     aCode:"Cadastral code", aSold:"Sold for", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
@@ -396,6 +398,7 @@ const I18N = {
     aQueryPh:"Номер лота, кадастровый код или адрес",
     aInView:"В текущей области карты", aRefresh:"↻ Обновить", aNone:"Аукционы не найдены.",
     aNoneInView:"В этой области аукционов нет. Уменьшите масштаб или снимите отметку.",
+    aNoOutline:"Контур не построен: ", aTraceOff:"построение контура отключено",
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
     aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoGeo:"Координаты ещё не получены из кадастра.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
     aCode:"Кадастровый код", aSold:"Продано за", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
@@ -1878,10 +1881,19 @@ async function focusAuction(a) {
           area = res.area ?? area; exact = res.exact;
         }
 
-        let coords = [vertex], traced = false, inferred = false;
+        let coords = [vertex], traced = false, inferred = false, whyNoRing = null;
         if (document.getElementById("do-trace").checked) {
           const tr = await traceBoundary(vertex[0], vertex[1], area || 1000, a.code);
           if (tr && tr.length >= 3) { coords = tr; traced = true; inferred = !!tr.inferred; }
+          // traceBoundary already knows why it gave up — it records the reason in
+          // __traceLog.result and prints it to the console. Throwing that away
+          // here is what made the same parcel look "fine from the codes tab and
+          // broken from the auctions list": both paths trace, both can refuse,
+          // and only one of them said so. plotAll() has carried a `reason` per
+          // parcel all along; this is the same courtesy.
+          else whyNoRing = (window.__trace && window.__trace.result) || "no ring";
+        } else {
+          whyNoRing = t("aTraceOff");
         }
         const isPoly = coords.length >= 3;
         const popup = auctionPopup(a, { area, exact, inferred });
@@ -1899,7 +1911,11 @@ async function focusAuction(a) {
           if (inferred) coords.inferred = true;
           rememberRing(a.code, coords);
         }
-        aStatus("");
+        // A pin where an outline was expected is not an error, but it is never
+        // self-explanatory: the point is the registry's own VERTEX, which is a
+        // corner and routinely sits against a neighbouring parcel's label. Say
+        // which of the two happened.
+        aStatus(isPoly ? "" : t("aNoOutline") + whyNoRing);
       } catch (e) { aStatus(t("aNoGeom")); return; }
     }
   }
@@ -1963,7 +1979,13 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
   document.getElementById("a-q").value = "";
   document.getElementById("a-phase").value = "";
-  document.getElementById("a-view").checked = false;
+  // defaultChecked is the `checked` attribute in the markup, so Clear restores
+  // whatever the default IS rather than a copy of what it was when this line
+  // was written. Hard-coding `false` here was correct until the default became
+  // true, at which point Clear quietly started turning a filter OFF instead of
+  // resetting it — the one thing a reset button must never do.
+  const view = document.getElementById("a-view");
+  view.checked = view.defaultChecked;
   auctionLayer.clearLayers();
   viewLayer.clearLayers();
   for (const p of drawn.values()) if (p && p.pin) pointGroup.removeLayer(p.pin);
