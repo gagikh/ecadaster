@@ -11,6 +11,10 @@
 <script src="regions.js"></script>
 <style>
   :root { --bg:#0f172a; --panel:#111827; --line:#1f2937; --txt:#e5e7eb; --mut:#9ca3af; --acc:#38bdf8; }
+  /* Phase colours, defined once. The card titles use them through CSS and
+     the map markers read them back with getComputedStyle, so a colour can
+     never mean one thing in the list and another on the map. */
+  :root { --ph-current:#34d399; --ph-upcoming:#fbbf24; --ph-finished:#f87171; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
   #map { position:absolute; inset:0; }
@@ -69,9 +73,9 @@
   .acard.nocode { opacity:.72; }
   /* Status lives in the title colour: bidding now, open, closed. The list is
      grouped in the same order, so colour and position always agree. */
-  .acard.ph-current  .t { color:#34d399; }
-  .acard.ph-upcoming .t { color:#fbbf24; }
-  .acard.ph-finished .t { color:#f87171; }
+  .acard.ph-current  .t { color:var(--ph-current); }
+  .acard.ph-upcoming .t { color:var(--ph-upcoming); }
+  .acard.ph-finished .t { color:var(--ph-finished); }
   .acard.ph-finished { opacity:.7; }
   .acard .m { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--mut); margin-top:4px; }
   .acard .m .lbl { opacity:.7; }
@@ -1465,6 +1469,10 @@ const place = (hy) => LANG === "hy" ? hy : ((PLACE[hy] || [])[LANG === "en" ? 0 
 // Data comes from the Worker (/auctions, backed by D1). Until that endpoint is
 // live the tab degrades to a clear message instead of an error.
 const auctionLayer = L.layerGroup().addTo(map);      // its own layer: codes stay visible
+// The in-view pins are separate from auctionLayer on purpose: drawing an
+// outline must not clear the pins, and toggling the checkbox must not
+// erase an outline someone opened deliberately.
+const viewLayer = L.layerGroup().addTo(map);
 let AUCTIONS = null;                                  // cached for the session
 
 const aStatus = (m) => document.getElementById("aStatus").textContent = m || "";
@@ -1553,6 +1561,66 @@ function phaseOf(a) {
   return a.statusCode === 1 ? "current" : "upcoming";
 }
 
+/**
+ * The phase colour, read from the stylesheet rather than repeated here.
+ *
+ * The obvious version of this is a { current: "#34d399", ... } object in the
+ * JS. It is also how the list and the map end up disagreeing: someone adjusts
+ * a colour in the CSS, the markers keep the old one, and nothing looks broken
+ * enough to investigate. Reading the custom property means there is exactly
+ * one place a phase colour is written down.
+ */
+const phaseColor = (() => {
+  const cache = {};
+  return (phase) => {
+    if (cache[phase]) return cache[phase];
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue("--ph-" + phase).trim();
+    return (cache[phase] = v || AUCTION_COLOR);
+  };
+})();
+
+/**
+ * A pin for every lot in the list, coloured by phase — what you would get by
+ * clicking each card in turn, without the clicking.
+ *
+ * Circles rather than the pin icon used for a single selection, for two
+ * reasons. Several hundred image markers is several hundred DOM nodes and the
+ * map stutters while panning; and a screen full of full-size pins hides the
+ * parcel boundaries underneath them, which is the thing being looked at.
+ *
+ * Nothing here fetches. Every coordinate is already in the /auctions payload,
+ * so this costs no requests even for 500 lots — which matters, because the
+ * cadastre is the part that is unreliable and this feature must not depend on
+ * it. Clicking a pin still runs the full focusAuction() path for that one lot.
+ */
+function paintViewPins(rows) {
+  viewLayer.clearLayers();
+  for (const a of rows) {
+    if (a.lat == null || a.lng == null) continue;
+    const ph = phaseOf(a);
+    const m = L.circleMarker([a.lat, a.lng], {
+      radius: 6, weight: 2, color: phaseColor(ph),
+      fillColor: phaseColor(ph), fillOpacity: ph === "finished" ? 0.25 : 0.65,
+      // A finished lot is context, not a target: dimmer, and behind the rest.
+      opacity: ph === "finished" ? 0.6 : 1,
+    });
+    m.bindTooltip(
+      `<b>${a.code || t("aNoCodeTag")}</b>` +
+      (a.title ? `<br>${String(a.title).slice(0, 70)}` : ""),
+      { direction: "top", opacity: 0.95 });
+    // Same action as the card, so a pin and its row are interchangeable.
+    m.on("click", () => {
+      const card = [...document.querySelectorAll(".acard")]
+        .find(el => el.querySelector(".c") &&
+                    el.querySelector(".c").textContent.trim() === (a.code || ""));
+      if (card) { card.scrollIntoView({ block: "nearest" }); pickAuction(a, card); }
+      else focusAuction(a);
+    });
+    m.addTo(viewLayer);
+  }
+}
+
 function renderAuctions() {
   const list = document.getElementById("aList");
   const region = document.getElementById("a-region").value;
@@ -1612,6 +1680,10 @@ function renderAuctions() {
     if (a !== b) return a < b ? -1 : 1;
     return String(x.endsAt || "").localeCompare(String(y.endsAt || ""));
   });
+
+  // Pins for everything listed, or none at all. Painted from `rows` after all
+  // the filtering, so the map and the panel are always showing the same set.
+  if (inView) paintViewPins(rows); else viewLayer.clearLayers();
 
   list.innerHTML = rows.length ? "" : (AUCTIONS && AUCTIONS.length === 0 && !aStatusHasMsg() ? `<p class="hint">${t("aNone")}</p>` : "");
   // Warm the position/outline cache for what is on screen, so the first click
@@ -1880,6 +1952,7 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-phase").value = "";
   document.getElementById("a-view").checked = false;
   auctionLayer.clearLayers();
+  viewLayer.clearLayers();
   for (const p of drawn.values()) if (p && p.pin) pointGroup.removeLayer(p.pin);
   drawn.clear();
   renderMeasurements();                 // drop their area / length labels
@@ -2028,6 +2101,21 @@ async function boot() {
   };
   await restore();
   map.on("moveend", syncURL);
+  // "In the visible part of the map" has to mean the CURRENT visible part.
+  // Until now the list was filtered once and then went stale until something
+  // else re-rendered it, which was tolerable when it only reordered a panel
+  // and is not once the same set is drawn on the map: pins would sit outside
+  // the view they claim to describe.
+  //
+  // Debounced, and only while the box is ticked: re-rendering on every frame
+  // of a drag would repaint several hundred markers for no benefit, and the
+  // work is wasted entirely when the filter is off.
+  let viewTimer = null;
+  map.on("moveend", () => {
+    if (!document.getElementById("a-view").checked) return;
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(renderAuctions, 250);
+  });
   window.addEventListener("popstate", () => {
     if (statsOpen()) { closeStats(true); return; }   // Back closes the overlay
     restore();

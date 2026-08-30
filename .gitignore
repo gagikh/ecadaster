@@ -4,3 +4,11 @@ __pycache__/
 node_modules/
 # Worker + parser stay local (deployed with wrangler, never pushed)
 worker/
+# Live credentials. .env holds a JSESSIONID from a logged-in e-cadastre
+# session, which authenticates as that person to a state registry - it is a
+# password, not configuration. Checked 2026-08-26: never tracked, no commit
+# has ever touched it.
+.env
+.env.*
+py/.cadastre-cookie
+*.cadastre-cookie
