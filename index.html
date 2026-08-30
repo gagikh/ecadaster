@@ -220,7 +220,12 @@
       <option value="upcoming" data-i18n="aPhaseUpcoming">Not started only</option>
       <option value="finished" data-i18n="aPhaseFinished">Finished only</option>
     </select>
-    <label class="chk"><input type="checkbox" id="a-view">
+    <!-- Checked by default: this is a map, and a list that ignores where the
+         map is pointing is a list of the wrong things. Opening on Yerevan
+         and being shown a lot in a Kotayk village reads as a bug, because
+         functionally it is one. The whole country is visible at the
+         starting zoom, so nothing is hidden until someone zooms in. -->
+    <label class="chk"><input type="checkbox" id="a-view" checked>
       <span data-i18n="aInView">In current map view</span></label>
     <div class="row" style="margin-top:8px">
       <button id="aRefresh" style="flex:1" data-i18n="aRefresh">↻ Refresh</button>
@@ -304,6 +309,7 @@ const I18N = {
     aRegionOff:"Քարտեզի տեսանելի հատվածում մարզի ընտրությունը չի կիրառվում։",
     aQueryPh:"Լոտի համար, ծածկագիր կամ հասցե",
     aInView:"Քարտեզի տեսանելի հատվածում", aRefresh:"↻ Թարմացնել", aNone:"Աճուրդներ չեն գտնվել։",
+    aNoneInView:"Այս տեսադաշտում աճուրդներ չկան։ Հեռացրեք խոշորացումը կամ հանեք նշումը։",
     aLoading:"Բեռնվում է…", daysShort:"օր", aEndsSoon:"այսօր",
     aNoCode:"Այս լոտը կադաստրային ծածկագիր չունի՝ բացվում է աճուրդի էջը։", aNoGeo:"Դիրքերը դեռ հաշվարկված չեն կադաստրում։", aNoCodeTag:"առանց ծածկագրի", aNoGeom:"Հողամասը չհաջողվեց գտնել կադաստրում։",
     aCode:"Կադաստրային ծածկագիր", aSold:"Վաճառված է", aPriceStart:"Մեկնարկային գին", aValuation:"Գնահատված արժեք", aDeposit:"Նախավճար",
@@ -346,6 +352,7 @@ const I18N = {
     aRegionOff:"The region filter does not apply while the map view is used.",
     aQueryPh:"Lot number, cadastral code or address",
     aInView:"In current map view", aRefresh:"↻ Refresh", aNone:"No auctions found.",
+    aNoneInView:"No auctions in this view. Zoom out, or untick the box above.",
     aLoading:"Loading…", daysShort:"d", aEndsSoon:"today",
     aNoCode:"No cadastral code — opening the lot page.", aNoGeo:"Positions not resolved from the cadastre yet.", aNoCodeTag:"no cadastral code", aNoGeom:"Parcel not found in the cadastre.",
     aCode:"Cadastral code", aSold:"Sold for", aPriceStart:"Starting price", aValuation:"Valuation", aDeposit:"Deposit",
@@ -388,6 +395,7 @@ const I18N = {
     aRegionOff:"Фильтр по марзу не применяется при выборе области карты.",
     aQueryPh:"Номер лота, кадастровый код или адрес",
     aInView:"В текущей области карты", aRefresh:"↻ Обновить", aNone:"Аукционы не найдены.",
+    aNoneInView:"В этой области аукционов нет. Уменьшите масштаб или снимите отметку.",
     aLoading:"Загрузка…", daysShort:"дн", aEndsSoon:"сегодня",
     aNoCode:"Нет кадастрового кода — открываю страницу лота.", aNoGeo:"Координаты ещё не получены из кадастра.", aNoCodeTag:"без кадастрового кода", aNoGeom:"Участок не найден в кадастре.",
     aCode:"Кадастровый код", aSold:"Продано за", aPriceStart:"Стартовая цена", aValuation:"Оценка", aDeposit:"Предоплата",
@@ -1665,6 +1673,11 @@ function renderAuctions() {
     const located = rows.filter(a => a.lat != null);
     rows = located.filter(a => b.contains([a.lat, a.lng]));
     if (!located.length) aStatus(t("aNoGeo"));       // nothing geocoded yet
+    // An empty panel is indistinguishable from a broken one. If there are lots
+    // but none HERE, say which of the two it is — otherwise the honest answer
+    // ("you are looking at somewhere with no auctions") reads as no data.
+    else if (!rows.length) aStatus(t("aNoneInView"));
+    else aStatus("");
   }
   // Grouped by phase — bidding now, then open, then closed — and inside each
   // group by cadastral code, so parcels in the same block sit together. Lots
