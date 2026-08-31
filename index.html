@@ -195,10 +195,10 @@
 
   <div class="pane" id="pane-codes" role="tabpanel">
 
-  <textarea id="codes" rows="7" data-i18n-ph="codesPh" placeholder="One code per line, e.g.
-01-001-0658-0020
-01-001-0658-0017
-01-001-0658-0021"></textarea>
+  <!-- The placeholder is filled from SAMPLE_CODES by applyI18n(); the attribute
+       here is only what shows if the script never runs. -->
+  <textarea id="codes" rows="7" data-i18n-ph="codesPh"
+            placeholder="One code per line"></textarea>
   <div class="row" style="margin-top:8px">
     <button id="find" style="flex:1" data-i18n="plot">Plot all</button>
     <button id="share" style="background:#10b981;color:#04283a" data-i18n="share">Share</button>
@@ -291,15 +291,19 @@ const API = "https://cadastre-worker.ecadaster.workers.dev";   // own proxy to t
 const WMS = API + "/wms";                                      // WMS tiles via the proxy (adds required Referer)
 const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
 
+// The example codes in the input placeholder: three real, adjacent parcels in
+// Yerevan, so pasting them plots something recognisable instead of an error.
+// One list, quoted by every locale below -- they used to be four copies, and
+// a code fixed in one of them stayed wrong in the other three.
+const SAMPLE_CODES = ["01-001-0658-0020", "01-001-0658-0017", "01-001-0658-0021"];
+const samplePh = (lead) => lead + "\n" + SAMPLE_CODES.join("\n");
+
 // ---- i18n ---------------------------------------------------------------
 const I18N = {
   hy: {
     title:"Հայաստանի կադաստրի քարտեզ",
     sub:"Պաշտոնական կադաստրի տվյալները՝ ձեր ընտրած քարտեզի վրա։",
-    codesPh:`Մեկ ծածկագիր՝ տողում, օր.
-01-001-0658-0020
-01-001-0658-0017
-01-001-0658-0021`,
+    codesPh:samplePh("Մեկ ծածկագիր՝ տողում, օր."),
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
     tabCodes:"Ծածկագրեր", tabStats:"Վիճակագրություն", tabAuctions:"Աճուրդներ",
     aAllRegions:"Բոլորը",
@@ -340,10 +344,7 @@ const I18N = {
   en: {
     title:"Armenia cadastre map",
     sub:"Official cadastre data over the basemap of your choice.",
-    codesPh:`One code per line, e.g.
-01-001-0658-0020
-01-001-0658-0017
-01-001-0658-0021`,
+    codesPh:samplePh("One code per line, e.g."),
     plot:"Plot all", share:"Share", clear:"Clear",
     tabCodes:"Cadastral codes", tabStats:"Statistics", tabAuctions:"Auctions",
     aAllRegions:"All",
@@ -384,10 +385,7 @@ const I18N = {
   ru: {
     title:"Карта кадастра Армении",
     sub:"Официальные данные кадастра поверх выбранной подложки.",
-    codesPh:`Один код в строке, напр.
-01-001-0658-0020
-01-001-0658-0017
-01-001-0658-0021`,
+    codesPh:samplePh("Один код в строке, напр."),
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
     tabCodes:"Кадастровые коды", tabStats:"Статистика", tabAuctions:"Аукционы",
     aAllRegions:"Все",
