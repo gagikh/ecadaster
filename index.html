@@ -2047,13 +2047,14 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
   document.getElementById("a-q").value = "";
   document.getElementById("a-phase").value = "";
-  // defaultChecked is the `checked` attribute in the markup, so Clear restores
-  // whatever the default IS rather than a copy of what it was when this line
-  // was written. Hard-coding `false` here was correct until the default became
-  // true, at which point Clear quietly started turning a filter OFF instead of
-  // resetting it — the one thing a reset button must never do.
-  const view = document.getElementById("a-view");
-  view.checked = view.defaultChecked;
+  // "In current map view" is deliberately NOT touched here.
+  //
+  // It went wrong twice: first Clear forced it off, then Clear forced it on
+  // (restoring the default). Both were wrong for one reason — it is not a
+  // filter, it is a VIEW MODE. The search box, the region and the phase are
+  // things you are looking for; this is how you want the panel to relate to
+  // the map. Clearing a search should no more change it than it should change
+  // the basemap or the zoom.
   auctionLayer.clearLayers();
   viewLayer.clearLayers();
   for (const p of drawn.values()) if (p && p.pin) pointGroup.removeLayer(p.pin);
