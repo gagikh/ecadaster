@@ -1093,12 +1093,14 @@ async function plotAll(skipFit = false) {
           coords.length = 0; coords.push(...t); isPoly = true; traced = true;
         }
       }
+      const holes = Array.isArray(res.holes) ? res.holes : null;
       const layer = isPoly
-        ? L.polygon(coords, { color, weight:2, fillColor:color, fillOpacity:opacityVal(),
-                              dashArray: dashFor(traced, inferred) }).addTo(map)
+        ? parcelPolygon(coords, holes, { color, weight:2, fillColor:color,
+                                         fillOpacity:opacityVal(),
+                                         dashArray: dashFor(traced, inferred) }).addTo(map)
         : L.marker(vertex, { icon: pinIcon(color) }).addTo(map);
       const centre = isPoly ? parcelCentre(coords) : vertex;
-      const p = { code, coords, layer, ok:true, color, isPoly, traced, inferred, centre, exact: res.exact,
+      const p = { code, coords, holes, layer, ok:true, color, isPoly, traced, inferred, centre, exact: res.exact,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
                   perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
       layer.bindPopup(popupHtml(p), popupOpts());
@@ -1275,6 +1277,18 @@ const loadImg = (url, ms = 15000) => new Promise((res, rej) => {
   i.src = url;
 });
 
+// L.polygon takes [outer, ...holes]; passing the outer ring alone is what an
+// existing call site does when it knows nothing about holes. Both shapes go
+// through here so that "does this parcel have interior rings" is asked in one
+// place rather than four.
+//
+// Why it matters: the registry does serve them. 10-001-0360-0103 wraps around
+// 10-001-0360-0105, and until the Worker's parseWkt stopped erasing brackets
+// the two rings arrived welded into one -- which draws as the parcel plus a
+// stripe across it, along the line where the path goes into the hole and back.
+const parcelPolygon = (coords, holes, opts) =>
+  L.polygon((holes && holes.length) ? [coords, ...holes] : coords, opts);
+
 function simplify(pts, tol) {                     // Douglas-Peucker
   if (pts.length < 3) return pts;
   const d2 = (p, a, b) => {
@@ -1324,7 +1338,11 @@ function simplify(pts, tol) {                     // Douglas-Peucker
  * area-ranking never applied. Rings cached in the hours between the two
  * changes are either absent or were traced under the old, unconstrained rule.
  */
-const TRACE_VERSION = 6;
+// 7: parseWkt stopped welding a polygon's interior rings onto its outer one.
+// Any ring cached before that may be a welded one, and a welded ring redrawn
+// is the stripe this bump exists to get rid of -- RING_KEY is derived from
+// this number, and the loader already deletes every older rings.v* key.
+const TRACE_VERSION = 7;
 
 /**
  * Every candidate fill this run considered, so a wrong outline can be diagnosed
@@ -2069,8 +2087,8 @@ async function focusAuction(a) {
       const inferred = !fromCadastre && knownInferred;
       const area = db.area ?? a.area;
       const popup = auctionPopup(a, { area, inferred });
-      layer = L.polygon(known, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
-                                 fillOpacity: opacityVal(),
+      layer = parcelPolygon(known, known.holes, { color: AUCTION_COLOR, weight: 3,
+                                 fillColor: AUCTION_COLOR, fillOpacity: opacityVal(),
                                  dashArray: dashFor(!fromCadastre, inferred) });
       layer.bindPopup(popup, popupOpts());
       layer.addTo(auctionLayer);
@@ -2102,13 +2120,14 @@ async function focusAuction(a) {
           vertex = res.coords[0];
           if (res.coords.length >= 3) {          // the cadastre served a real ring
             const popup = auctionPopup(a, res);
-            layer = L.polygon(res.coords, { color: AUCTION_COLOR, weight: 3,
+            const holes = Array.isArray(res.holes) ? res.holes : null;
+            layer = parcelPolygon(res.coords, holes, { color: AUCTION_COLOR, weight: 3,
                                             fillColor: AUCTION_COLOR, fillOpacity: opacityVal() });
             layer.bindPopup(popup, popupOpts());
             layer.addTo(auctionLayer);
             const centre = parcelCentre(res.coords);
             popupAtCentre(layer, centre);
-            drawn.set(a.code, { layer, coords: res.coords, area: res.area ?? area,
+            drawn.set(a.code, { layer, coords: res.coords, holes, area: res.area ?? area,
                                 isPoly: true, centre,
                                 pin: addRefPoint(centre, AUCTION_COLOR, popup) });
             renderMeasurements();
@@ -2136,7 +2155,8 @@ async function focusAuction(a) {
         const isPoly = coords.length >= 3;
         const popup = auctionPopup(a, { area, exact, inferred });
         layer = isPoly
-          ? L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
+          ? parcelPolygon(coords, coords.holes, { color: AUCTION_COLOR, weight: 3,
+                                fillColor: AUCTION_COLOR,
                                 fillOpacity: opacityVal(), dashArray: dashFor(traced, inferred) })
           : L.marker(vertex, { icon: pinIcon(AUCTION_COLOR) });
         layer.bindPopup(popup, popupOpts());
@@ -2223,7 +2243,8 @@ async function upgradeToOutline(a, marker, area) {
 
   const areaNow = (fresh && fresh.area) || area;
   const popup = auctionPopup(a, { area: areaNow, exact: fresh && fresh.exact, inferred });
-  const layer = L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
+  const holes = (fresh && Array.isArray(fresh.holes)) ? fresh.holes : null;
+  const layer = parcelPolygon(coords, holes, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
                                     fillOpacity: opacityVal(),
                                     dashArray: dashFor(!(fresh && fresh.coords && fresh.coords.length >= 3), inferred) });
   layer.bindPopup(popup, popupOpts());
@@ -2233,7 +2254,7 @@ async function upgradeToOutline(a, marker, area) {
 
   const centre = parcelCentre(coords);
   popupAtCentre(layer, centre);
-  drawn.set(a.code, { layer, coords, area: areaNow, isPoly: true, centre,
+  drawn.set(a.code, { layer, coords, holes, area: areaNow, isPoly: true, centre,
                       pin: addRefPoint(centre, AUCTION_COLOR, popup) });
   if (inferred) coords.inferred = true;
   rememberRing(a.code, coords);                 // the next click is instant
