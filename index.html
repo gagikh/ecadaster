@@ -1090,10 +1090,15 @@ async function plotAll(skipFit = false) {
         const t = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, code);
         if (t && t.length >= 3) {
           inferred = !!t.inferred;
+          // `coords` is res.coords refilled in place, NOT `t` -- so anything
+          // riding on the traced array has to be carried across by hand.
           coords.length = 0; coords.push(...t); isPoly = true; traced = true;
+          if (t.holes) coords.holes = t.holes;
         }
       }
-      const holes = Array.isArray(res.holes) ? res.holes : null;
+      // A traced hole beats a served one: if we traced, the registry gave us
+      // no ring to have holes on in the first place.
+      const holes = coords.holes || (Array.isArray(res.holes) ? res.holes : null);
       const layer = isPoly
         ? parcelPolygon(coords, holes, { color, weight:2, fillColor:color,
                                          fillOpacity:opacityVal(),
@@ -1286,6 +1291,28 @@ const loadImg = (url, ms = 15000) => new Promise((res, rej) => {
 // 10-001-0360-0105, and until the Worker's parseWkt stopped erasing brackets
 // the two rings arrived welded into one -- which draws as the parcel plus a
 // stripe across it, along the line where the path goes into the hole and back.
+// Moore-neighbour contour walk. `inside(i)` decides membership, so the same
+// code follows the parcel's own outline and the outline of a hole inside it --
+// two walks that must behave identically and, until this was pulled out, were
+// two copies waiting to disagree.
+const MOORE = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+function traceContour(px, inside, sx, sy) {
+  const ring = []; let cx = sx, cy = sy, dir = 4, guard = 0;
+  do {
+    ring.push([cx, cy]);
+    let moved = false;
+    for (let k = 1; k <= 8; k++) {
+      const nd = (dir + k) % 8;
+      const nx = cx + MOORE[nd][0], ny = cy + MOORE[nd][1];
+      if (nx >= 0 && ny >= 0 && nx < px && ny < px && inside(ny*px + nx)) {
+        cx = nx; cy = ny; dir = (nd + 5) % 8; moved = true; break;
+      }
+    }
+    if (!moved) break;
+  } while ((cx !== sx || cy !== sy) && ++guard < 200000);
+  return ring;
+}
+
 const parcelPolygon = (coords, holes, opts) =>
   L.polygon((holes && holes.length) ? [coords, ...holes] : coords, opts);
 
@@ -1339,10 +1366,12 @@ function simplify(pts, tol) {                     // Douglas-Peucker
  * changes are either absent or were traced under the old, unconstrained rule.
  */
 // 7: parseWkt stopped welding a polygon's interior rings onto its outer one.
-// Any ring cached before that may be a welded one, and a welded ring redrawn
-// is the stripe this bump exists to get rid of -- RING_KEY is derived from
-// this number, and the loader already deletes every older rings.v* key.
-const TRACE_VERSION = 7;
+//    A welded ring redrawn is the stripe that bump existed to get rid of.
+// 8: the tracer started returning holes. A v7 ring for a holed parcel is not
+//    wrong, it is incomplete -- it redraws solid over the parcel in the middle
+//    of it, which looks deliberate and is not.
+// RING_KEY is derived from this number and the loader deletes older rings.v*.
+const TRACE_VERSION = 8;
 
 /**
  * Every candidate fill this run considered, so a wrong outline can be diagnosed
@@ -1429,6 +1458,69 @@ async function traceBoundary(lat, lng, area, label = "") {
     };
     const candidates = [];      // cells that could be ours, this window
 
+    // A parcel can have a hole in it -- 10-001-0360-0103 wraps around
+    // 10-001-0360-0105 -- and the fill knows exactly where: a hole is
+    // everything that is NOT ours and that the image border cannot reach
+    // without crossing us. Nothing else is enclosed; the drawn lines between
+    // neighbouring parcels form one network that runs off the edge of the
+    // image, so they flood from the border and are excluded, while the closed
+    // loop around an interior parcel does not.
+    //
+    // Measured on the raster for 0103: exactly one enclosed component, 2054.6
+    // m2. Parcel 2178.7 + hole 2054.6 = 4233.3, which is the 4201 m2 the old
+    // contour-area rule was reporting -- the same number, now split into the
+    // two things it was made of.
+    //
+    // Only ever run for the cell that WON, once. Two more passes over the
+    // window is nothing next to the fills already done, but doing it per
+    // candidate would multiply it by the seed count for no reason.
+    const holesFor = (id) => {
+      const outside = new Uint8Array(px*px);
+      const q = [];
+      const push = (i) => { if (!outside[i] && region[i] !== id) { outside[i] = 1; q.push(i); } };
+      for (let x = 0; x < px; x++) { push(x); push((px-1)*px + x); }
+      for (let y = 0; y < px; y++) { push(y*px); push(y*px + px-1); }
+      while (q.length) {
+        const i = q.pop(), x = i % px, y = (i / px) | 0;
+        if (x > 0)    push(i-1);
+        if (x < px-1) push(i+1);
+        if (y > 0)    push(i-px);
+        if (y < px-1) push(i+px);
+      }
+      const seen = new Uint8Array(px*px), out = [];
+      for (let i = 0; i < px*px; i++) {
+        if (region[i] === id || outside[i] || seen[i]) continue;
+        const comp = [i]; seen[i] = 1; let n = 0, sx = i % px, sy = (i / px) | 0;
+        while (comp.length) {
+          const k = comp.pop(); n++;
+          const x = k % px, y = (k / px) | 0;
+          if (y < sy || (y === sy && x < sx)) { sx = x; sy = y; }
+          for (const j of [x > 0 ? k-1 : -1, x < px-1 ? k+1 : -1,
+                           y > 0 ? k-px : -1, y < px-1 ? k+px : -1]) {
+            if (j >= 0 && !seen[j] && region[j] !== id && !outside[j]) { seen[j] = 1; comp.push(j); }
+          }
+        }
+        // Same floor as a fill: below this it is raster noise, not a parcel.
+        if (n < 50) continue;
+        const hr = traceContour(px, (k) => region[k] !== id && !outside[k] && seen[k], sx, sy);
+        if (hr.length < 8) continue;
+        out.push(simplify(hr, 1.2).map(([x, y]) => [
+          bbox[0] + (x / px) * (bbox[2] - bbox[0]),
+          bbox[3] - (y / px) * (bbox[3] - bbox[1])]));
+      }
+      return out;
+    };
+
+    // The ring the caller gets, with its holes riding on it the way `inferred`
+    // already does -- parcelPolygon() reads `.holes`, and every consumer that
+    // does not care about holes still sees a plain array of points.
+    const withHoles = (gkRing, id) => {
+      const ll = gkRing.map(([x, y]) => fromGk8(x, y));
+      const hs = holesFor(id).map(r => r.map(([x, y]) => fromGk8(x, y)));
+      if (hs.length) { ll.holes = hs; __traceLog.holes = hs.map(h => h.length); }
+      return ll;
+    };
+
     for (const [ox, oy] of seeds) {
       const sxp = mid + ox, syp = mid + oy;
       if (sxp <= 0 || syp <= 0 || sxp >= px-1 || syp >= px-1) continue;
@@ -1477,20 +1569,7 @@ async function traceBoundary(lat, lng, area, label = "") {
       outer: for (let y = 0; y < px; y++) for (let x = 0; x < px; x++)
         if (region[y*px+x] === id) { sx = x; sy = y; break outer; }
       if (sx < 0) continue;
-      const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-      const ring = []; let cx3 = sx, cy3 = sy, dir = 4, guard = 0;
-      do {
-        ring.push([cx3, cy3]);
-        let moved = false;
-        for (let k = 1; k <= 8; k++) {
-          const nd = (dir + k) % 8;
-          const nx = cx3 + dirs[nd][0], ny = cy3 + dirs[nd][1];
-          if (nx >= 0 && ny >= 0 && nx < px && ny < px && region[ny*px+nx] === id) {
-            cx3 = nx; cy3 = ny; dir = (nd + 5) % 8; moved = true; break;
-          }
-        }
-        if (!moved) break;
-      } while ((cx3 !== sx || cy3 !== sy) && ++guard < 200000);
+      const ring = traceContour(px, (i) => region[i] === id, sx, sy);
       if (ring.length < 8) { __traceLog.skipped.shortRing++; continue; }
 
       const simple = simplify(ring, 1.2);
@@ -1612,17 +1691,17 @@ async function traceBoundary(lat, lng, area, label = "") {
         __traceLog.leakAtePoint = true;
         continue;
       }
-      if (holdsPoint) return done(gk.map(([x, y]) => fromGk8(x, y)), "holds point");
+      if (holdsPoint) return done(withHoles(gk, id), "holds point");
       // A candidate for the corner rule. No official area to check against
       // means area cannot confirm anything, so it cannot be a candidate
       // either — touching alone is true of every cell at the junction.
-      if (touches && fitsArea) candidates.push({ gk, ratio, seed: `${ox},${oy}` });
+      if (touches && fitsArea) candidates.push({ gk, id, ratio, seed: `${ox},${oy}` });
     }
 
     // Corner rule: exactly one cell touching the point also fits the area.
     if (candidates.length === 1) {
       const c = candidates[0];
-      return done(c.gk.map(([x, y]) => fromGk8(x, y)), `inferred at corner (ratio ${c.ratio})`, true);
+      return done(withHoles(c.gk, c.id), `inferred at corner (ratio ${c.ratio})`, true);
     }
     if (candidates.length > 1) {
       __traceLog.ambiguous = candidates.map(c => c.ratio);
@@ -2056,7 +2135,14 @@ const ringCache = (() => {
 // dotted style exists to prevent. Store it alongside.
 function rememberRing(code, ring) {
   try {
-    ringCache[code] = ring.inferred ? { ring, inferred: true } : ring;
+    // A bare array is the common case and stays the cheap one. `inferred` and
+    // `holes` both live on the array object and would not survive
+    // JSON.stringify, so anything carrying either is stored as a record --
+    // and a holed parcel redrawn from cache without its holes is solid orange
+    // over a neighbour's land.
+    ringCache[code] = (ring.inferred || ring.holes)
+      ? { ring, inferred: !!ring.inferred, holes: ring.holes || undefined }
+      : ring;
     const keys = Object.keys(ringCache);
     if (keys.length > 400) delete ringCache[keys[0]];      // keep it bounded
     localStorage.setItem(RING_KEY, JSON.stringify(ringCache));
@@ -2098,7 +2184,10 @@ async function focusAuction(a) {
     if (!known && db.ring && db.ring.length >= 3) { known = db.ring; ringSrc = db.src; }
     if (!known && cached) {
       const c = Array.isArray(cached) ? cached : cached.ring;
-      if (c && c.length >= 3) { known = c; ringSrc = "traced"; }
+      if (c && c.length >= 3) {
+        known = c; ringSrc = "traced";
+        if (!Array.isArray(cached) && cached.holes) known.holes = cached.holes;
+      }
     }
 
     if (known) {
