@@ -1556,14 +1556,33 @@ async function traceBoundary(lat, lng, area, label = "") {
       //    presented as equal: the caller draws it dotted and the popup says
       //    the boundary is inferred. Confidence is shown, not implied.
       const holdsPoint = region[centre] === id;
+      // Measure the REGION, not its outline.
+      //
+      // This was the shoelace area of the traced contour, and for a parcel
+      // with a hole in it that is the wrong number: the contour runs round the
+      // outside, so it encloses the hole as though the hole were ours.
+      // 10-001-0360-0103 wraps around 10-001-0360-0105, and it read
+      //
+      //     34823 filled pixels -> 2178.7 m2   ratio 0.945   (registered 2306.37)
+      //     the same contour    -> 4201.0 m2   ratio 1.821
+      //
+      // 0.945 is a textbook-correct trace. 1.821 is outside the 0.85..1.15
+      // band, so the cell was thrown away and the lot fell back to a pin --
+      // every parcel with a hole, silently, everywhere.
+      //
+      // `count` is what the flood fill actually painted: holes are not in it,
+      // because the fill never entered them. On the two simple cells in that
+      // same window the two measures agree to ~1% (2178.7/2178.7 and
+      // 1945.5/1922.5), which is why this survived so long.
+      //
+      // test/check_geometry.py has modelled it as count * per_px^2 since it
+      // was written. It could not catch the disagreement because it
+      // re-implements the rule instead of running the shipped one -- worth
+      // remembering the next time a test here is a copy rather than a caller.
       let got = null, ratio = null;
       if (area > 0) {
-        let s = 0;
-        for (let i = 0, n = gk.length; i < n; i++) {
-          const [x1, y1] = gk[i], [x2, y2] = gk[(i + 1) % n];
-          s += x1 * y2 - x2 * y1;
-        }
-        got = Math.abs(s) / 2; ratio = +(got / area).toFixed(3);
+        got = count * perPx * perPx;
+        ratio = +(got / area).toFixed(3);
       }
       const leaked  = ratio != null && (ratio > 4 || ratio < 0.25);
       const touches = holdsPoint || touchesPoint(id);
