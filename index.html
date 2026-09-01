@@ -1969,6 +1969,7 @@ function renderAuctions() {
   }
 }
 const aStatusHasMsg = () => !!document.getElementById("aStatus").textContent;
+const aStatusText = () => document.getElementById("aStatus").textContent || "";
 
 // Draw the auctioned parcel from its cadastral code — same pipeline as the
 // codes tab (/parcel, with boundary tracing), in the auction colour.
@@ -2154,6 +2155,9 @@ async function focusAuction(a) {
         // corner and routinely sits against a neighbouring parcel's label. Say
         // which of the two happened.
         aStatus(isPoly ? "" : t("aNoOutline") + whyNoRing);
+        // ...and then go and get the outline anyway, without making the click
+        // wait for it. See upgradeToOutline().
+        if (!isPoly) upgradeToOutline(a, layer, area);
       } catch (e) { aStatus(t("aNoGeom")); return; }
     }
   }
@@ -2164,6 +2168,81 @@ async function focusAuction(a) {
 // Frame whatever was drawn and open its popup. Split out of focusAuction so the
 // one branch that can finish early — the cadastre handing back a real polygon —
 // ends the same way as every other, instead of duplicating the phone handling.
+
+// Codes tab: 10-001-0359-0047 draws an outline. Auctions list: the same parcel
+// stops at a pin. Both paths trace, so the difference is where they start from.
+//
+//   plotAll()       traces from res.coords[0] -- the registry's CURRENT vertex,
+//                   fetched a moment ago, with the area from the same reply.
+//   focusAuction()  traces from the STORED vertex, to avoid a cadastre
+//                   round-trip for a point we are already holding. That is the
+//                   right default and it is usually the same point -- but the
+//                   registry moves them. Four lots drifted 4-20 m on
+//                   2026-09-01 with their areas unchanged. A trace that starts
+//                   on a corner the parcel no longer has finds nothing, and the
+//                   click ends on a pin while the codes tab shows the shape.
+//
+// So: keep the fast path exactly as it is, and when it lands on a pin, try
+// again in the background from a fresh lookup. The click stays instant, the
+// outline arrives when it arrives, and a failure leaves the pin that is
+// already there.
+// Codes we have a definitive answer for: either an outline arrived, or the
+// tracer ran and refused. A bail because the cadastre was unreachable does NOT
+// belong here -- that is a fact about this minute, not about the parcel, and
+// marking it would mean the lot never gets its outline in this tab again.
+const upgradeTried = new Set();
+
+async function upgradeToOutline(a, marker, area) {
+  if (upgradeTried.has(a.code)) return;
+  upgradeTried.add(a.code);
+  const retryLater = () => { upgradeTried.delete(a.code); };
+  if (!document.getElementById("do-trace").checked) { retryLater(); return; }
+
+  let coords = null, inferred = false, fresh = null;
+  try {
+    const got = await fetchPolygon(a.code);            // the codes tab's own fetch
+    if (got.ok) {
+      fresh = got.data;
+      if (fresh.coords && fresh.coords.length >= 3) coords = fresh.coords;
+    }
+    if (!coords) {
+      const v = fresh && fresh.coords && fresh.coords.length ? fresh.coords[0] : null;
+      if (!v) { retryLater(); return; }                // upstream down: keep the pin
+      const tr = await traceBoundary(v[0], v[1], (fresh && fresh.area) || area || 1000, a.code);
+      if (!tr || tr.length < 3) return;                // it looked and found nothing
+      coords = tr; inferred = !!tr.inferred;
+    }
+  } catch { retryLater(); return; }                     // never let this throw at the user
+
+  // Nothing below may assume the map still looks the way it did. The lookup
+  // takes seconds, and in that time the user can clear, click another lot, or
+  // click this one again. Swap in only if OUR marker is still the thing on
+  // screen for this code.
+  const held = drawn.get(a.code);
+  if (!held || held.layer !== marker || !auctionLayer.hasLayer(marker)) return;
+
+  const areaNow = (fresh && fresh.area) || area;
+  const popup = auctionPopup(a, { area: areaNow, exact: fresh && fresh.exact, inferred });
+  const layer = L.polygon(coords, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
+                                    fillOpacity: opacityVal(),
+                                    dashArray: dashFor(!(fresh && fresh.coords && fresh.coords.length >= 3), inferred) });
+  layer.bindPopup(popup, popupOpts());
+  layer.addTo(auctionLayer);
+  auctionLayer.removeLayer(marker);
+  if (held.pin) auctionLayer.removeLayer(held.pin);
+
+  const centre = parcelCentre(coords);
+  popupAtCentre(layer, centre);
+  drawn.set(a.code, { layer, coords, area: areaNow, isPoly: true, centre,
+                      pin: addRefPoint(centre, AUCTION_COLOR, popup) });
+  if (inferred) coords.inferred = true;
+  rememberRing(a.code, coords);                 // the next click is instant
+  renderMeasurements();
+  // Only clear OUR message. By now the user may have clicked a different lot,
+  // and its status line is not ours to wipe.
+  if (String(aStatusText()).startsWith(t("aNoOutline"))) aStatus("");
+}
+
 async function finish(layer) {
   const b = layer.getBounds ? layer.getBounds() : L.latLngBounds([layer.getLatLng(), layer.getLatLng()]).pad(0.002);
 
