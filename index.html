@@ -492,7 +492,7 @@ let wmsMode = "worker";
 
 // The same rewriting the Worker's /wms case does, applied here when we talk to
 // the geoportal ourselves. It is the third copy of this arithmetic and the
-// only one that could silently disagree with the others, so py/test_wms.py
+// only one that could silently disagree with the others, so test/test_wms.py
 // parses the rules out of BOTH this file and the Worker and fails if they
 // diverge. Leaflet asks for EPSG:3857; upstream ignores 3857 silently, which
 // is why nothing may ever forward it.
@@ -503,7 +503,7 @@ let wmsMode = "worker";
 //                            meridian convergence)
 function toDirectWmsUrl(proxied) {
   // WMS is an absolute URL, so no base is needed -- and without one this
-  // function is pure, which is what lets py/test_wms.py run it under node.
+  // function is pure, which is what lets test/test_wms.py run it under node.
   const u = new URL(proxied);
   const qs = u.searchParams;
   qs.delete("_");
@@ -709,8 +709,18 @@ bind("ov-blocks", overlays.blocks);
 const opacityVal = () => document.getElementById("opacity").value / 100;
 function applyOpacity() {
   const o = opacityVal();
-  Object.values(overlays).forEach(l => l.setOpacity(o));           // rasters (when logged in)
-  plotted.forEach(p => p.layer && p.isPoly && p.layer.setStyle({ fillOpacity:o }));
+  Object.values(overlays).forEach(l => l.setOpacity(o));    // the WMS rasters
+  // Every filled parcel on the map, whichever tab drew it. `drawn` was missing
+  // here: an auction parcel reads opacityVal() when it is created and then
+  // never again, so moving the slider did nothing to it and the control looked
+  // broken on the tab most people use. Two collections is already one too
+  // many; the only reason they are separate is that Clear empties them at
+  // different times.
+  //
+  // isPoly guards a point-only lot, whose layer is a marker -- setStyle on it
+  // would throw and take the rest of the loop with it.
+  for (const store of [plotted, drawn])
+    store.forEach(p => p.layer && p.isPoly && p.layer.setStyle({ fillOpacity:o }));
   syncURL();
 }
 document.getElementById("opacity").oninput = applyOpacity;
