@@ -288,7 +288,27 @@
 <script>
 // ---- Config -------------------------------------------------------------
 const API = "https://cadastre-worker.ecadaster.workers.dev";   // own proxy to the official cadastre
-const WMS = API + "/wms";                                      // WMS tiles via the proxy (adds required Referer)
+const WMS = API + "/wms";                                      // tiles via the proxy (the fallback path)
+
+// Tiles can skip the proxy. /parcel cannot, and the difference is not a
+// preference -- it is what the upstream checks:
+//
+//   /ows/wms    ignores Referer completely (measured 2026-08-31: geoportal
+//               Referer, github.io Referer and no Referer all return the same
+//               200 PNG), and a tile is an <img>, which needs no CORS. So a
+//               browser can fetch it directly.
+//   /data/info  answers 403 to every Referer without a session cookie, and
+//               sends no Access-Control-* headers. It needs the cookie, the
+//               cookie is a Worker secret, and it must never reach a page.
+//
+// Why bother: the geoportal is unreachable from outside Armenia. Port 8443
+// times out from Cloudflare and from an unrelated datacentre alike (443 opens
+// and resets), while answering a domestic connection in three seconds. The
+// Worker's /wms has been returning 502 all day for exactly that reason. Going
+// direct puts the cadastre layers back for the visitors who are IN Armenia,
+// which is nearly all of them, and takes the highest-volume request the map
+// makes out of the Worker.
+const WMS_DIRECT = "https://gp.e-cadastre.am:8443/arpis-geoportal/ows/wms";
 const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
 
 // The example codes in the input placeholder: three real, adjacent parcels in
@@ -457,6 +477,93 @@ function applyI18n() {
   if (typeof renderLegend === "function") renderLegend();
 }
 
+// ---- Where tiles come from ----------------------------------------------
+//
+// "worker" is the safe default and the state the page starts in: it is what
+// shipped for months, and a first paint must not wait on a probe. probeWms()
+// runs at load and flips this to "direct" if the geoportal answers this
+// browser. Layers are built once, against WMS; the mode is read per tile.
+let wmsMode = "worker";
+
+// The same rewriting the Worker's /wms case does, applied here when we talk to
+// the geoportal ourselves. It is the third copy of this arithmetic and the
+// only one that could silently disagree with the others, so py/test_wms.py
+// parses the rules out of BOTH this file and the Worker and fails if they
+// diverge. Leaflet asks for EPSG:3857; upstream ignores 3857 silently, which
+// is why nothing may ever forward it.
+//
+//   ND_* orthophoto rasters  render ONLY in the native EPSG:2400000 grid
+//   vector layers            reproject cleanly to EPSG:4326, which keeps tiles
+//                            aligned exactly (a native bbox would be skewed by
+//                            meridian convergence)
+function toDirectWmsUrl(proxied) {
+  // WMS is an absolute URL, so no base is needed -- and without one this
+  // function is pure, which is what lets py/test_wms.py run it under node.
+  const u = new URL(proxied);
+  const qs = u.searchParams;
+  qs.delete("_");
+  const keyOf = (n) => [...qs.keys()].find(k => k.toLowerCase() === n);
+  const srsKey = keyOf("srs") || keyOf("crs"), bboxKey = keyOf("bbox");
+  if (srsKey && bboxKey) {
+    const cur = qs.get(srsKey) || "";
+    const v = qs.get(bboxKey).split(",").map(Number);
+    if (v.length === 4 && v.every(n => !Number.isNaN(n))) {
+      let [w, s2, e, n2] = v;
+      if (/3857|900913/.test(cur)) {
+        const R = 6378137;
+        const m2ll = (x, y) => [(x / R) * 180 / Math.PI,
+                                Math.atan(Math.sinh(y / R)) * 180 / Math.PI];
+        [w, s2] = m2ll(v[0], v[1]);
+        [e, n2] = m2ll(v[2], v[3]);
+      }
+      if (/^ND_/.test(qs.get(keyOf("layers")) || "")) {
+        const c = [[s2, w], [s2, e], [n2, w], [n2, e]].map(([la, lo]) => toGk8(la, lo));
+        const xs = c.map(pt => pt[0]), ys = c.map(pt => pt[1]);
+        qs.set(bboxKey, [Math.min(...xs), Math.min(...ys),
+                         Math.max(...xs), Math.max(...ys)].map(n => n.toFixed(2)).join(","));
+        qs.set(srsKey, "EPSG:2400000");
+      } else if (/3857|900913/.test(cur)) {
+        qs.set(bboxKey, [w, s2, e, n2].map(n => n.toFixed(7)).join(","));
+        qs.set(srsKey, "EPSG:4326");
+      }
+    }
+  }
+  return WMS_DIRECT + "?" + qs.toString();
+}
+
+// Every cadastre layer is one of these. The URL decision happens per tile, so
+// flipping wmsMode and calling redraw() is enough -- no layer is rebuilt, and
+// nothing the user has toggled gets lost.
+const CadastreWMS = L.TileLayer.WMS.extend({
+  getTileUrl(coords) {
+    const proxied = L.TileLayer.WMS.prototype.getTileUrl.call(this, coords);
+    return wmsMode === "direct" ? toDirectWmsUrl(proxied) : proxied;
+  }
+});
+const cadastreWms = (opts) => new CadastreWMS(WMS, opts);
+
+// One <img> against the geoportal, once, at load. An image is used rather than
+// fetch() on purpose: loading an image needs no CORS, so this measures exactly
+// what a tile request will do. No answer in 4s counts as no.
+function probeWms(onDirect) {
+  const img = new Image();
+  let settled = false;
+  const done = (ok) => {
+    if (settled) return;
+    settled = true;
+    img.onload = img.onerror = null;
+    if (ok) { wmsMode = "direct"; onDirect(); }
+  };
+  const timer = setTimeout(() => done(false), 4000);
+  img.onload  = () => { clearTimeout(timer); done(img.width > 0); };
+  img.onerror = () => { clearTimeout(timer); done(false); };
+  img.src = WMS_DIRECT + "?" + new URLSearchParams({
+    service: "WMS", request: "GetMap", version: "1.1.1", layers: "parcels",
+    format: "image/png", transparent: "true", width: "8", height: "8",
+    srs: "EPSG:4326", bbox: "44.50,40.17,44.51,40.18",
+  }).toString();
+}
+
 // ---- Map ----------------------------------------------------------------
 // Armenia only: bounds keep the view on-country, minZoom stops world zoom-out
 const AM_BOUNDS = L.latLngBounds([38.75, 43.35], [41.40, 46.70]);
@@ -493,18 +600,18 @@ const bases = {
     maxZoom:22, maxNativeZoom:19, attribution:"© OpenStreetMap Deutschland" }),
   cartoVoyager: L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", {
     maxZoom:22, maxNativeZoom:20, attribution:"© OpenStreetMap, © CARTO" }),
-  ortho: L.tileLayer.wms(WMS, {
+  ortho: cadastreWms({
     layers:"ND_S1-2k_Y2002", format:"image/jpeg", transparent:false,
     version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
-  ortho10k2002: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2002", format:"image/jpeg",
+  ortho10k2002: cadastreWms({ layers:"ND_S1-10k_Y2002", format:"image/jpeg",
     transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
-  ortho10k2004: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2004", format:"image/jpeg",
+  ortho10k2004: cadastreWms({ layers:"ND_S1-10k_Y2004", format:"image/jpeg",
     transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
-  ortho10k2009: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2009", format:"image/jpeg",
+  ortho10k2009: cadastreWms({ layers:"ND_S1-10k_Y2009", format:"image/jpeg",
     transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
-  ortho10k2010: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2010", format:"image/jpeg",
+  ortho10k2010: cadastreWms({ layers:"ND_S1-10k_Y2010", format:"image/jpeg",
     transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR }),
-  ortho10k2011: L.tileLayer.wms(WMS, { layers:"ND_S1-10k_Y2011", format:"image/jpeg",
+  ortho10k2011: cadastreWms({ layers:"ND_S1-10k_Y2011", format:"image/jpeg",
     transparent:false, version:"1.1.1", maxZoom:22, tileSize:512, bounds:AM_BOUNDS, attribution:CADASTRE_ATTR })
 };
 let currentBase = bases.osm.addTo(map);
@@ -520,22 +627,46 @@ document.getElementById("basemap").onchange = (e) => { switchBase(e.target.value
 // Cadastre overlays (WMS). Leaflet requests EPSG:3857; GeoServer reprojects from EPSG:2400000.
 const startOpacity = 0.7;
 const overlays = {
-  parcels: L.tileLayer.wms(WMS, { layers:"parcels", format:"image/png", transparent:true,
+  parcels: cadastreWms({ layers:"parcels", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity, minZoom:14, maxZoom:22, tileSize:512, updateWhenIdle:true, attribution:CADASTRE_ATTR }),
-  plabels: L.tileLayer.wms(WMS, { layers:"parcels_label_am", format:"image/png", transparent:true,
+  plabels: cadastreWms({ layers:"parcels_label_am", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity, minZoom:16, maxZoom:22, tileSize:512, updateWhenIdle:true }),
-  buildings: L.tileLayer.wms(WMS, { layers:"buildings", format:"image/png", transparent:true,
+  buildings: cadastreWms({ layers:"buildings", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity, minZoom:15, maxZoom:22, tileSize:512, updateWhenIdle:true }),
-  blocks: L.tileLayer.wms(WMS, { layers:"blocks", format:"image/png", transparent:true,
+  blocks: cadastreWms({ layers:"blocks", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity, minZoom:12, maxZoom:22, tileSize:512, updateWhenIdle:true })
 };
 overlays.parcels.addTo(map);
 overlays.plabels.addTo(map);
 
-// Tiles are proxied by our Worker (which adds the Referer the cadastre requires),
-// so they render for everyone — no login. Surface genuine outages only.
-let overlayWarned = false;
-Object.values(overlays).forEach(l => l.on("tileerror", () => {
+// Every cadastre raster, whichever path it is on. bases.ortho* are in here too:
+// they are the same upstream and fail the same way, and leaving them out meant
+// a failing orthophoto redrew nothing and warned nobody.
+const cadastreLayers = () => [...Object.values(overlays),
+                              ...Object.values(bases).filter(l => l instanceof CadastreWMS)];
+
+// Ask the geoportal directly, once. If it answers, repaint what is on the map
+// — only the visible layers, since Leaflet redraws a detached layer for nothing.
+probeWms(() => cadastreLayers().forEach(l => { if (map.hasLayer(l)) l.redraw(); }));
+
+// Two different failures, and they need different answers.
+//
+//   direct mode failing  is recoverable: the browser could reach the geoportal
+//                        when we probed and cannot now (it went down, or the
+//                        port/cert changed under us). Fall back to the Worker
+//                        and repaint. Once only — if the Worker is down too,
+//                        flipping back and forth would just churn tiles.
+//   worker mode failing  is the end of the line. Say so.
+//
+// This is why /wms can never be deleted from the Worker: it is the floor.
+let wmsFellBack = false, overlayWarned = false;
+cadastreLayers().forEach(l => l.on("tileerror", () => {
+  if (wmsMode === "direct" && !wmsFellBack) {
+    wmsFellBack = true;
+    wmsMode = "worker";
+    cadastreLayers().forEach(x => { if (map.hasLayer(x)) x.redraw(); });
+    return;
+  }
   if (overlayWarned) return;
   overlayWarned = true;
   status(t("rasterWarn"));
