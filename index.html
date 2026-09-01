@@ -309,6 +309,11 @@ const WMS = API + "/wms";                                      // tiles via the 
 // which is nearly all of them, and takes the highest-volume request the map
 // makes out of the Worker.
 const WMS_DIRECT = "https://gp.e-cadastre.am:8443/arpis-geoportal/ows/wms";
+
+// Layers the geoportal renders ONLY in EPSG:2400000. Anchored at both ends so
+// `parcels` matches and `parcels_label_am` does not -- the label layer renders
+// in EPSG:4326 and reprojecting it would cost alignment for nothing.
+const NATIVE_GRID_ONLY = /^(ND_.*|parcels)$/;
 const CADASTRE_ATTR = "© State Cadastre Committee of Armenia";
 
 // The example codes in the input placeholder: three real, adjacent parcels in
@@ -504,7 +509,11 @@ function toDirectWmsUrl(proxied) {
   qs.delete("_");
   const keyOf = (n) => [...qs.keys()].find(k => k.toLowerCase() === n);
   const srsKey = keyOf("srs") || keyOf("crs"), bboxKey = keyOf("bbox");
-  if (srsKey && bboxKey) {
+  // A caller that already asked in the native grid gets left alone. traceRing()
+  // does exactly that, and running its bbox through toGk8 a second time would
+  // send the request to a point some hundreds of kilometres away -- with a 200
+  // and a plausible-looking tile back.
+  if (srsKey && bboxKey && !/2400000/.test(qs.get(srsKey) || "")) {
     const cur = qs.get(srsKey) || "";
     const v = qs.get(bboxKey).split(",").map(Number);
     if (v.length === 4 && v.every(n => !Number.isNaN(n))) {
@@ -516,7 +525,24 @@ function toDirectWmsUrl(proxied) {
         [w, s2] = m2ll(v[0], v[1]);
         [e, n2] = m2ll(v[2], v[3]);
       }
-      if (/^ND_/.test(qs.get(keyOf("layers")) || "")) {
+      // Which layers must be asked for in the native grid:
+      //
+      //   ND_*     orthophoto rasters -- known since the proxy was written
+      //   parcels  MEASURED 2026-08-31, live: in EPSG:4326 the server answers 200
+      //            with a fully transparent tile (alpha 0/0, one colour, byte-for-
+      //            byte identical over Yerevan and the middle of Lake Sevan), and
+      //            in EPSG:2400000 the same extent renders. Verified at two zooms
+      //            and in Gyumri. buildings, blocks and parcels_label_am render in
+      //            BOTH, which is why this went unnoticed: the layer that failed is
+      //            the only one that fails, and it is the default overlay.
+      //
+      // This repo already half-knew: traceRing() has always asked for `parcels` in
+      // EPSG:2400000. The proxy's reprojection rule never learned it.
+      //
+      // The cost is 3.0 m of over-coverage on a 596 m tile -- 2.8 px at z17, worst
+      // at the corners, zero at the centre. That is the same deal the orthophotos
+      // have always taken, and it beats a blank layer.
+      if (NATIVE_GRID_ONLY.test(qs.get(keyOf("layers")) || "")) {
         const c = [[s2, w], [s2, e], [n2, w], [n2, e]].map(([la, lo]) => toGk8(la, lo));
         const xs = c.map(pt => pt[0]), ys = c.map(pt => pt[1]);
         qs.set(bboxKey, [Math.min(...xs), Math.min(...ys),
@@ -1318,10 +1344,15 @@ async function traceBoundary(lat, lng, area, label = "") {
   for (const mult of [4, 8, 16]) {                // widen if the parcel overflows
     const half = Math.max(30, mult * Math.sqrt(Math.max(area, 100)) / 2);
     const bbox = [CX-half, CY-half, CX+half, CY+half];
-    const url = API + "/wms?" + new URLSearchParams({
+    // Same two paths as the tile layers, for the same reason: this fetch was
+    // going through the proxy, which the geoportal has been refusing all day,
+    // so tracing failed for everyone while the layers underneath it worked.
+    // The bbox is already EPSG:2400000, which toDirectWmsUrl leaves untouched.
+    const proxied = API + "/wms?" + new URLSearchParams({
       service:"WMS", version:"1.1.1", request:"GetMap", layers:"parcels", styles:"",
       format:"image/png", transparent:"true", srs:"EPSG:2400000",
       bbox: bbox.join(","), width:String(px), height:String(px) });
+    const url = wmsMode === "direct" ? toDirectWmsUrl(proxied) : proxied;
     let img; try { img = await loadImg(url); }
     catch (e) { return done(null, "WMS image failed: " + (e && e.message)); }
     const cv = document.createElement("canvas"); cv.width = cv.height = px;
