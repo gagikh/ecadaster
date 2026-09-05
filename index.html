@@ -71,6 +71,9 @@
   .acard .c { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--acc); margin-top:3px; }
   .acard .c.nc { font-family:inherit; color:var(--mut); font-style:italic; }
   .acard.nocode { opacity:.72; }
+  .acard .src { display:inline-block; margin-right:6px; padding:1px 5px;
+                border-radius:3px; font-size:11px; vertical-align:1px;
+                background:#334155; color:#cbd5e1; }
   /* Status lives in the title colour: bidding now, open, closed. The list is
      grouped in the same order, so colour and position always agree. */
   .acard.ph-current  .t { color:var(--ph-current); }
@@ -213,6 +216,16 @@
     <input type="text" id="a-q" data-i18n-ph="aQueryPh"
            placeholder="Lot number, cadastral code or address" style="margin-bottom:6px">
     <select id="a-region"></select>
+    <!-- Two auction sites, one list. A tab per site meant the same filters,
+         pins and popups twice over, and no way to see both at once -- which is
+         the question the map actually answers: what land is for sale near
+         here. So the source is a filter like any other, and "all" is the
+         default. -->
+    <select id="a-source">
+      <option value="" data-i18n="aSrcAll">All auction sites</option>
+      <option value="e-auctions" data-i18n="aSrcEauctions">e-auctions.am</option>
+      <option value="ajurd" data-i18n="aSrcAjurd">ajurd.am (enforcement)</option>
+    </select>
     <select id="a-phase" style="margin-top:6px">
       <option value=""         data-i18n="aPhaseAll">All auctions</option>
       <option value="open"     data-i18n="aPhaseOpen">Open auctions only</option>
@@ -332,6 +345,7 @@ const I18N = {
     plot:"Գծել բոլորը", share:"Կիսվել", clear:"Մաքրել",
     tabCodes:"Ծածկագրեր", tabStats:"Վիճակագրություն", tabAuctions:"Աճուրդներ",
     aAllRegions:"Բոլորը",
+    aSrcAll:"Բոլոր կայքերը", aSrcEauctions:"e-auctions.am", aSrcAjurd:"ajurd.am (հարկադիր)", aSrc_ajurd:"հարկադիր", aPriceNow:"Ընթացիկ առաջարկ", aBids:"Առաջարկներ",
     aPhaseOpen:"Միայն բաց աճուրդները", aPhaseCurrent:"Միայն ընթացիկ աճուրդները",
     aPhaseUpcoming:"Միայն չմեկնարկած աճուրդները", aPhaseFinished:"Միայն ավարտված աճուրդները",
     aPhaseAll:"Բոլոր աճուրդները",
@@ -373,6 +387,7 @@ const I18N = {
     plot:"Plot all", share:"Share", clear:"Clear",
     tabCodes:"Cadastral codes", tabStats:"Statistics", tabAuctions:"Auctions",
     aAllRegions:"All",
+    aSrcAll:"All auction sites", aSrcEauctions:"e-auctions.am", aSrcAjurd:"ajurd.am (enforcement)", aSrc_ajurd:"enforcement", aPriceNow:"Current offer", aBids:"Bids",
     aPhaseOpen:"Open auctions only", aPhaseCurrent:"Ongoing only",
     aPhaseUpcoming:"Not started only", aPhaseFinished:"Finished only",
     aPhaseAll:"All auctions",
@@ -414,6 +429,7 @@ const I18N = {
     plot:"Показать все", share:"Поделиться", clear:"Очистить",
     tabCodes:"Кадастровые коды", tabStats:"Статистика", tabAuctions:"Аукционы",
     aAllRegions:"Все",
+    aSrcAll:"Все площадки", aSrcEauctions:"e-auctions.am", aSrcAjurd:"ajurd.am (принудительные)", aSrc_ajurd:"принудительные", aPriceNow:"Текущее предложение", aBids:"Ставки",
     aPhaseOpen:"Только открытые аукционы", aPhaseCurrent:"Только текущие",
     aPhaseUpcoming:"Только не начавшиеся", aPhaseFinished:"Только завершённые",
     aPhaseAll:"Все аукционы",
@@ -1809,7 +1825,9 @@ const auctionLayer = L.layerGroup().addTo(map);      // its own layer: codes sta
 // outline must not clear the pins, and toggling the checkbox must not
 // erase an outline someone opened deliberately.
 const viewLayer = L.layerGroup().addTo(map);
-let AUCTIONS = null;                                  // cached for the session
+// Every lot from every source, fetched once. Which site a row came from is a
+// FILTER over this array, not a separate load -- see the a-source select.
+let AUCTIONS = null;
 
 const aStatus = (m) => document.getElementById("aStatus").textContent = m || "";
 const fmtPrice = (n) => n == null ? "" : n.toLocaleString("hy-AM") + "֏";
@@ -1866,7 +1884,10 @@ async function loadAuctions(force) {
   try {
     // open=0 means "no status filter" — finished lots are wanted here, since
     // the list shows them as a red group. The checkbox hides them client-side.
-    const r = await fetch(API + "/auctions?open=0");
+    // `source=all` explicitly. The Worker's default is e-auctions -- kept that
+    // way so every caller written before the second site still sees what it
+    // saw -- so asking for everything has to be said out loud.
+    const r = await fetch(API + "/auctions?open=0&source=all");
     if (!r.ok) throw new Error(String(r.status));
     AUCTIONS = await r.json();
     aStatus("");
@@ -1986,6 +2007,7 @@ function paintViewPins(rows) {
 function renderAuctions() {
   const list = document.getElementById("aList");
   const region = document.getElementById("a-region").value;
+  const wantSrc = document.getElementById("a-source").value;
   const phase = document.getElementById("a-phase").value;
   const inView = document.getElementById("a-view").checked;
   const b = map.getBounds();
@@ -2022,6 +2044,10 @@ function renderAuctions() {
   // screen is already in whichever region it is in. Applying both hides lots
   // the person is looking straight at, so the view wins and the region select
   // is disabled while it is on.
+  // Unlike the region filter, this one applies WITH the map view too: "show
+  // me only enforcement auctions, here" is a real question, and the view does
+  // not answer it the way it answers "which region".
+  if (wantSrc) rows = rows.filter(a => a.source === wantSrc);
   if (region && !inView) rows = rows.filter(a => matchRegion(a, region));
   if (inView) {
     const located = rows.filter(a => a.lat != null);
@@ -2061,7 +2087,12 @@ function renderAuctions() {
     const ph = phaseOf(a);
     const el = document.createElement("div");
     el.className = "acard ph-" + ph + (a.code ? "" : " nocode");
-    el.innerHTML = `<div class="t">${a.title || ""}</div>` +
+    // Which site. Now that one list holds both, a lot with no badge would be
+    // from whichever site the reader assumed -- and the two have different
+    // deposit rules and different bidding.
+    const srcTag = a.source && a.source !== "e-auctions"
+      ? `<span class="src">${t("aSrc_" + a.source) || a.source}</span>` : "";
+    el.innerHTML = `<div class="t">${srcTag}${a.title || ""}</div>` +
       (a.code ? `<div class="c">${a.code}</div>`
               : `<div class="c nc">${t("aNoCodeTag")}</div>`) +
       `<div class="m">` +
@@ -2069,6 +2100,15 @@ function renderAuctions() {
       // leads and the starting price follows for comparison.
       (ph === "finished" ? amount(t("aSold"), a.priceSold, "sold") : "") +
       amount(t("aPriceStart"), a.priceStart, "start") +
+      // ajurd runs live bidding, so a lot has a CURRENT offer as well as a
+      // starting price. Shown only when it is actually higher: on a lot with
+      // no bids the two are equal, and printing the same number twice under
+      // two labels reads as a discrepancy.
+      (a.priceNow != null && a.priceStart != null && a.priceNow > a.priceStart
+        ? amount(t("aPriceNow"), a.priceNow, "sold") : "") +
+      // 0 bids is a fact worth stating, so this tests for null, not falsiness.
+      (a.bids != null
+        ? `<span><span class="lbl">${t("aBids")}</span> ${a.bids}</span>` : "") +
       amount(t("aDeposit"), a.deposit) +
       // A closed lot gets its end date, never a countdown — "today" on an
       // auction that ended last month reads as a live deadline.
@@ -2412,6 +2452,23 @@ function auctionPopup(a, parcel) {
     `<a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
+/**
+ * Take every auction parcel off the map.
+ *
+ * Two callers, one body. Clear does it because the user asked; switching
+ * between the two auction tabs does it because the rows underneath are about
+ * to be replaced -- and `drawn` is the half that matters there. It is keyed by
+ * cadastral code, not by lot, so a parcel left in it from one site would be
+ * silently reused for the other site's lot with the same code, popup and all.
+ */
+function clearAuctionLayers() {
+  auctionLayer.clearLayers();
+  viewLayer.clearLayers();
+  for (const p of drawn.values()) if (p && p.pin) pointGroup.removeLayer(p.pin);
+  drawn.clear();
+  renderMeasurements();                 // drop their area / length labels
+}
+
 // Refetch from the Worker. Filtering is instant and local, so this button is
 // only about getting newer data — it used to be labelled "Search", which made
 // no sense next to filters that already apply as you type.
@@ -2425,6 +2482,9 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
   document.getElementById("a-q").value = "";
   document.getElementById("a-phase").value = "";
+  // A search term, so Clear resets it -- unlike "in current map view", which
+  // is a view mode and stays where the user put it.
+  document.getElementById("a-source").value = "";
   // "In current map view" is deliberately NOT touched here.
   //
   // It went wrong twice: first Clear forced it off, then Clear forced it on
@@ -2433,16 +2493,13 @@ document.getElementById("aClear").onclick = () => {
   // things you are looking for; this is how you want the panel to relate to
   // the map. Clearing a search should no more change it than it should change
   // the basemap or the zoom.
-  auctionLayer.clearLayers();
-  viewLayer.clearLayers();
-  for (const p of drawn.values()) if (p && p.pin) pointGroup.removeLayer(p.pin);
-  drawn.clear();
-  renderMeasurements();                 // drop their area / length labels
+  clearAuctionLayers();
   aStatus("");
   renderAuctions();                     // back to the unfiltered list
   syncURL();                            // and an address bar that agrees
 };
-for (const id of ["a-phase", "a-view", "a-region"]) document.getElementById(id).onchange = renderAuctions;
+for (const id of ["a-phase", "a-view", "a-region", "a-source"])
+  document.getElementById(id).onchange = renderAuctions;
 // Filter as you type — the list is already in memory, so there is nothing to wait for.
 document.getElementById("a-q").addEventListener("input", renderAuctions);
 
