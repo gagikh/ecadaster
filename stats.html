@@ -239,6 +239,19 @@ function selected() {
 // ---- tiny SVG chart helpers (no libraries) ------------------------------
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 
+/**
+ * An href needs more than esc().
+ *
+ * esc() stops a value breaking OUT of the attribute; it does nothing about a
+ * value that is a perfectly well-formed `javascript:` URL, which needs no
+ * quote or angle bracket to execute on click. `a.url` is derived in SQL from
+ * the row's integer id today (cadastre-worker.js builds it with `||`), so
+ * nothing hostile can currently reach here -- which is exactly why this is
+ * worth pinning now, while it is free, rather than after someone stores a URL
+ * in the column.
+ */
+const safeUrl = (u) => /^https?:\/\//i.test(String(u || "")) ? String(u) : "#";
+
 /** Vertical bars with a value on top and a rotated label underneath. */
 function barChart(items, { alt = false, fmtV = (n) => n, height = 190 } = {}) {
   if (!items.length) return `<p class="note">—</p>`;
@@ -369,7 +382,7 @@ function render() {
             <th class="n">${t("area")}</th><th class="n">${t("price")}</th>
             <th class="n">${t("perSqm")}</th><th>${t("ends")}</th></tr>
         ${cheapest.map(a => `<tr>
-          <td><a href="${a.url}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
+          <td><a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
           <td>${esc(place(placeOf(a)))}</td>
           <td class="n">${areaFmt(a.area)}</td>
           <td class="n">${money(a.priceStart)}</td>

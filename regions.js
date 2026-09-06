@@ -163,5 +163,21 @@ function matchRegion(lot, value) {
   if (!hay.includes(up(value))) return false;
   const marz = Object.keys(MARZ).find(m => (MARZ[m] || []).includes(value));
   const digits = marz ? MARZ_CODE[marz] : null;
-  return !code || !digits || code.slice(0, 2) === digits;
+  // `marzNo`, not `code.slice(0, 2)`.
+  //
+  // The guard used to re-derive the province from `code` alone and disable
+  // itself when there was none — so a lot with no cadastral code matched ANY
+  // community whose name appears anywhere in its text. That is not a rare
+  // shape: it is every lot the crawler has not resolved a code for, and the
+  // haystack now includes the address, which is where place names live.
+  // Selecting Անի (Shirak) listed code-less Yerevan lots, because ԵՐԵՒԱՆԻ
+  // contains ԱՆԻ; selecting Տեղ (Syunik) listed anything whose address said
+  // տեղամաս.
+  //
+  // `marzNo` was already computed at the top of this function from `lot.marz`
+  // OR the code, and code-less ajurd rows DO carry marz — rescan.py fills it
+  // from the code's first pair. So the guard has something to work with in
+  // exactly the case it used to give up on, and only a row with neither a
+  // code nor a marz falls through now.
+  return !marzNo || !digits || marzNo === digits;
 }
