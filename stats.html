@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-16-stats-1">
+<meta name="build" content="2026-09-05-stats-2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Աճուրդների վիճակագրություն</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f172a'/><path d='M6 22l6-9 5 6 3-4 6 7z' fill='%2338bdf8'/></svg>">
@@ -58,6 +58,14 @@
 <header>
   <h1 id="h-title">Աճուրդների վիճակագրություն</h1>
   <select id="region"></select>
+  <!-- Same three options, same order and same default as the map's a-source.
+       Both pages load every source once and filter client-side, so this is a
+       filter over what is already here, not a second request. -->
+  <select id="source" style="min-width:0">
+    <option value="">—</option>
+    <option value="e-auctions">e-auctions.am</option>
+    <option value="ajurd">ajurd.am</option>
+  </select>
   <label class="note"><input type="checkbox" id="openOnly" checked> <span id="l-open"></span></label>
   <span class="grow"></span>
   <div class="langs">
@@ -79,14 +87,19 @@ const I18N = {
         sqmAvg:"Միջին ֏/մ²", sqmMin:"Նվազագույն ֏/մ²", sqmMax:"Առավելագույն ֏/մ²",
         sqmMed:"Մեդիան ֏/մ²", hSqm:"֏/մ² բաշխում", hSqmSub:"Ըստ կադաստրի պաշտոնական մակերեսի",
         hPrice:"Մեկնարկային գների բաշխում", hPriceSub:"Բոլոր լոտերը, որոնց գինը հայտնի է",
-        byCommunity:"Լոտերն ըստ համայնքի", byCommunitySub:"Կազմակերպիչ համայնքը",
+        byCommunity:"Լոտերն ըստ համայնքի", byCommunitySub:"Համայնքը կամ կազմակերպիչը",
         timeline:"Ավարտները՝ ըստ շաբաթների", timelineSub:"Քանի աճուրդ է ավարտվում",
         cheapest:"Ամենաէժանը 1 մ²-ի հաշվով", lot:"Լոտ", area:"Մակերես", price:"Գին",
-        perSqm:"֏/մ²", organizer:"Կազմակերպիչ", ends:"Ավարտ",
+        perSqm:"֏/մ²", ends:"Ավարտ",
         none:"Այս ընտրության համար լոտեր չկան։", loading:"Բեռնվում է…",
         noArea:"Մակերեսները դեռ ստացված չեն կադաստրից — ֏/մ² բաժինները դատարկ են։",
         noPrice:"Այս լոտերը մեկնարկային գին չունեն — գնային ցուցանիշները դատարկ են։",
-        lotsShort:"լոտ", weekOf:"շաբ." },
+        lotsShort:"լոտ", weekOf:"շաբ.",
+        srcAll:"Բոլոր կայքերը", placeCol:"Համայնք",
+        clipped:"Ցուցակը կտրված է սերվերի սահմանաչափով — թվերը թերի են։",
+        shareWarn:"ajurd.am-ի լոտերի մոտ 57%-ը հողամասի բաժնեմաս է (օր. 1/5), "
+                + "իսկ մակերեսը՝ ամբողջ հողամասինը։ Այդ լոտերի ֏/մ²-ը "
+                + "իրականից ցածր է ցույց տրվում։" },
   en: { title:"Auction statistics", map:"Map", open:"Open auctions only",
         all:"All", lots:"Lots", withCode:"With code", withArea:"With area (from cadastre)",
         totalValue:"Total starting value", priceMin:"Lowest price",
@@ -94,14 +107,19 @@ const I18N = {
         sqmAvg:"Average ֏/m²", sqmMin:"Lowest ֏/m²", sqmMax:"Highest ֏/m²",
         sqmMed:"Median ֏/m²", hSqm:"֏/m² distribution", hSqmSub:"Using the cadastre's official area",
         hPrice:"Starting price distribution", hPriceSub:"Every lot with a known price",
-        byCommunity:"Lots per community", byCommunitySub:"By organising community",
+        byCommunity:"Lots per community", byCommunitySub:"The community, or the organiser",
         timeline:"Deadlines by week", timelineSub:"How many auctions end",
         cheapest:"Cheapest per m²", lot:"Lot", area:"Area", price:"Price",
-        perSqm:"֏/m²", organizer:"Organizer", ends:"Ends",
+        perSqm:"֏/m²", ends:"Ends",
         none:"No lots for this selection.", loading:"Loading…",
         noArea:"Areas not fetched from the cadastre yet — the ֏/m² panels are empty.",
         noPrice:"These lots have no starting price — the price panels are empty.",
-        lotsShort:"lots", weekOf:"wk" },
+        lotsShort:"lots", weekOf:"wk",
+        srcAll:"All auction sites", placeCol:"Community",
+        clipped:"The server clipped the list — these numbers are incomplete.",
+        shareWarn:"About 57% of ajurd.am lots are a fractional share of the "
+                + "parcel (1/5, 1/4, 1/6…) while the area is the whole "
+                + "parcel's, so their ֏/m² reads lower than it is." },
   ru: { title:"Статистика аукционов", map:"Карта", open:"Только открытые аукционы",
         all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью (из кадастра)",
         totalValue:"Общая стартовая стоимость", priceMin:"Минимальная цена",
@@ -109,14 +127,19 @@ const I18N = {
         sqmAvg:"Средняя ֏/м²", sqmMin:"Минимальная ֏/м²", sqmMax:"Максимальная ֏/м²",
         sqmMed:"Медианная ֏/м²", hSqm:"Распределение ֏/м²", hSqmSub:"По официальной площади кадастра",
         hPrice:"Распределение стартовых цен", hPriceSub:"Все лоты с известной ценой",
-        byCommunity:"Лоты по общинам", byCommunitySub:"По организующей общине",
+        byCommunity:"Лоты по общинам", byCommunitySub:"Община или организатор",
         timeline:"Окончания по неделям", timelineSub:"Сколько аукционов завершается",
         cheapest:"Самые дешёвые за м²", lot:"Лот", area:"Площадь", price:"Цена",
-        perSqm:"֏/м²", organizer:"Организатор", ends:"Окончание",
+        perSqm:"֏/м²", ends:"Окончание",
         none:"Нет лотов для этого выбора.", loading:"Загрузка…",
         noArea:"Площади ещё не получены из кадастра — панели ֏/м² пусты.",
         noPrice:"У этих лотов нет стартовой цены — ценовые панели пусты.",
-        lotsShort:"лотов", weekOf:"нед." },
+        lotsShort:"лотов", weekOf:"нед.",
+        srcAll:"Все площадки", placeCol:"Община",
+        clipped:"Сервер обрезал список — эти числа неполные.",
+        shareWarn:"Около 57% лотов ajurd.am — доля участка (1/5, 1/4, 1/6…), "
+                + "а площадь указана для всего участка, поэтому их ֏/м² "
+                + "занижен." },
 };
 
 const qs = new URLSearchParams(location.search);
@@ -125,7 +148,26 @@ if (!I18N[LANG]) LANG = "hy";
 const t = (k) => (I18N[LANG] || I18N.hy)[k] ?? k;
 const place = (hy) => placeIn(hy, LANG);
 
+/**
+ * The place to file a lot under: its community.
+ *
+ * e-auctions.am has no `community` column — the community IS the organiser
+ * there, spelled "Դվին համայնք", so the suffix comes off. ajurd.am is the
+ * other way round: `organizer` is NULL on every row (the seller is a bailiff,
+ * not a community) and `community` holds the bare name.
+ *
+ * Reading only `organizer`, as this page did, put all 477 ajurd lots into a
+ * single "—" bar and left the table's place column blank for every one of
+ * them.
+ */
+const placeOf = (a) =>
+  String(a.community || a.organizer || "—").replace(/\s+համայնք$/u, "");
+
 let LOTS = [];
+// Set from the X-Truncated header the Worker already sends. Two sources now
+// share this table, so the old limit=1000 was quietly clipping and the page
+// had no way to say so — every figure on it would have been short.
+let CLIPPED = false;
 
 // ---- formatting ---------------------------------------------------------
 const nf = () => new Intl.NumberFormat(LANG === "ru" ? "ru-RU" : LANG === "en" ? "en-US" : "hy-AM");
@@ -178,6 +220,7 @@ function weekStart(iso) {
 
 function selected() {
   const v = document.getElementById("region").value;
+  const src = document.getElementById("source").value;
   const openOnly = document.getElementById("openOnly").checked;
   let rows = LOTS;
   // stored dates are Yerevan wall-clock with no zone marker — see time.mjs
@@ -186,6 +229,9 @@ function selected() {
     const s = String(a.endsAt).trim().replace(" ", "T");
     return Date.parse(/[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "+04:00") > Date.now();
   });
+  // Exact match, not a prefix: the two names are 'e-auctions' and 'ajurd', and
+  // an unrecognised value must show nothing rather than everything.
+  if (src) rows = rows.filter(a => a.source === src);
   if (v) rows = rows.filter(a => matchRegion(a, v));      // shared, see regions.js
   return rows;
 }
@@ -234,9 +280,25 @@ function render() {
   const sqm = withArea.map(a => a.priceStart / a.area);
   const coded = rows.filter(a => a.code).length;
 
+  /*
+   * 273 of ajurd's 477 lots -- 57%, counted from the lot pages on 2026-09-06 --
+   * are a FRACTIONAL SHARE of a parcel: "16800քմ ընդհանուր մակերեսով հողամասի
+   * 1/7 բաժնեմասը". The price is for the share; `area` is the whole parcel,
+   * because that is what the registry holds and what the map draws. So every
+   * ֏/m² figure on this page is low for those lots by the size of the share --
+   * a 1/9 share reads nine times cheaper than it is, which is also the order
+   * "cheapest per m²" sorts by.
+   *
+   * Left uncorrected on purpose: dividing properly needs the share stored per
+   * lot, which is a schema change. What is NOT acceptable is showing the
+   * number with nothing to say it is skewed, so the note below rides along
+   * with any selection that contains ajurd rows.
+   */
+  const hasShares = rows.some(a => a.source === "ajurd");
+
   const byCommunity = {};
   for (const a of rows) {
-    const key = String(a.organizer || "—").replace(/\s+համայնք$/u, "");
+    const key = placeOf(a);
     byCommunity[key] = (byCommunity[key] || 0) + 1;
   }
   const communities = Object.entries(byCommunity)
@@ -258,6 +320,7 @@ function render() {
     `<div class="card"><div class="k">${k}</div><div class="v ${cls}">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
 
   main.innerHTML = `
+    ${CLIPPED ? `<section><p class="note">⚠ ${t("clipped")}</p></section>` : ""}
     <div class="cards">
       ${card(t("lots"), rows.length, "",
              `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withAnyArea.length}/${coded}`)}
@@ -271,6 +334,9 @@ function render() {
       ${card(t("sqmMin"), money(sqm.length ? Math.min(...sqm) : null), "acc2")}
       ${card(t("sqmMax"), money(sqm.length ? Math.max(...sqm) : null), "acc2")}
     </div>
+
+    ${sqm.length && hasShares
+      ? `<section><p class="note">⚠ ${t("shareWarn")}</p></section>` : ""}
 
     ${sqm.length ? ""
       : `<section><p class="note">${
@@ -296,14 +362,15 @@ function render() {
     </div>
 
     ${cheapest.length ? `<section>
-      <h2>${t("cheapest")}</h2><div class="sub">${t("perSqm")}</div>
+      <h2>${t("cheapest")}</h2><div class="sub">${t("perSqm")}${
+        hasShares ? " · ⚠ " + t("shareWarn") : ""}</div>
       <table>
-        <tr><th>${t("lot")}</th><th>${t("organizer")}</th>
+        <tr><th>${t("lot")}</th><th>${t("placeCol")}</th>
             <th class="n">${t("area")}</th><th class="n">${t("price")}</th>
             <th class="n">${t("perSqm")}</th><th>${t("ends")}</th></tr>
         ${cheapest.map(a => `<tr>
           <td><a href="${a.url}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
-          <td>${esc(place(String(a.organizer || "").replace(/\s+համայնք$/u, "")))}</td>
+          <td>${esc(place(placeOf(a)))}</td>
           <td class="n">${areaFmt(a.area)}</td>
           <td class="n">${money(a.priceStart)}</td>
           <td class="n">${money(a.sqm)}</td>
@@ -345,6 +412,9 @@ function applyLang() {
   document.getElementById("h-title").textContent = t("title");
   document.getElementById("l-open").textContent = t("open");
   document.getElementById("l-map").textContent = t("map");
+  // Only the "all" option is translated. The other two are the sites' own
+  // names and stay as they are in every language, exactly as on the map.
+  document.querySelector("#source option[value='']").textContent = t("srcAll");
   for (const b of document.querySelectorAll(".langs button"))
     b.classList.toggle("on", b.dataset.lang === LANG);
   buildRegions();
@@ -353,7 +423,9 @@ function applyLang() {
 function syncUrl() {
   const p = new URLSearchParams();
   const r = document.getElementById("region").value;
+  const s = document.getElementById("source").value;
   if (r) p.set("region", r);
+  if (s) p.set("source", s);
   p.set("lang", LANG);
   history.replaceState(null, "", "?" + p.toString());
   document.getElementById("back").href = "index.html?lang=" + LANG;
@@ -374,15 +446,32 @@ async function boot() {
     document.querySelector("header").style.padding = "10px 12px";
   }
   document.getElementById("region").value = qs.get("region") || "";
+  // An unknown ?source= would leave the select on "" while the URL claimed
+  // otherwise, so only a value the select actually has is restored.
+  const wantSrc = qs.get("source") || "";
+  const srcSel = document.getElementById("source");
+  srcSel.value = [...srcSel.options].some(o => o.value === wantSrc) ? wantSrc : "";
   for (const b of document.querySelectorAll(".langs button"))
     b.onclick = () => { LANG = b.dataset.lang; localStorage.setItem("lang", LANG);
                         applyLang(); syncUrl(); render(); };
   document.getElementById("region").onchange = () => { syncUrl(); render(); };
+  srcSel.onchange = () => { syncUrl(); render(); };
   document.getElementById("openOnly").onchange = render;
 
   document.getElementById("status").textContent = t("loading");
   try {
-    const r = await fetch(API + "/auctions?limit=1000");
+    // source=all, explicitly. The Worker's default is 'e-auctions' — that is
+    // deliberate, so callers written before the second source keep seeing what
+    // they saw — which means a request with no source would silently drop
+    // every ajurd lot from a page whose whole job is counting them.
+    //
+    // limit=3000, not 1000. Measured 2026-09-06: the two sources return 961
+    // rows (484 e-auctions, 477 ajurd) — thirty-nine short of the old cap, so
+    // this had not clipped yet and was weeks from doing so silently. That is
+    // how the LIMIT 500 incident began, and the number is only half the fix;
+    // X-Truncated on the next line is the half that lasts.
+    const r = await fetch(API + "/auctions?limit=3000&source=all");
+    CLIPPED = r.headers.get("X-Truncated") === "1";
     LOTS = await r.json();
   } catch { LOTS = []; }
   syncUrl();

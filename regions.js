@@ -122,11 +122,26 @@ var MARZ_CODE = {
  *
  * Titles arrive in mixed case and in ALL CAPS, so text comparison is done on
  * uppercased strings — Armenian uppercases cleanly in JS.
+ *
+ * THE HAYSTACK IS FOUR FIELDS, NOT TWO. It used to be `organizer + title`,
+ * which is e-auctions' vocabulary: that site names the organising community
+ * and buries the place in the title. ajurd.am states neither — `organizer` is
+ * NULL on every one of its rows and its titles are as short as
+ * "Հողամաս, Ն.Դվին" — and puts the place in `community` ("Դվին") and
+ * `address` ("Արարատի մարզ, Ն. Դվին համայնքում գտնվող հողամաս") instead. So a
+ * COMMUNITY selection matched no ajurd lot at all, on the map as well as on
+ * the stats page, and the marz-level selection kept working and hid it: marz
+ * is read from the code's digits, which ajurd rows do have.
+ *
+ * Widening the haystack cannot loosen a marz selection — that path compares
+ * digits and only falls back to text when there is no code — and the guard at
+ * the end still requires a community match to sit in that community's marz.
  */
 function matchRegion(lot, value) {
   if (!value) return true;
   const up = (s) => String(s || "").toUpperCase();
-  const hay = up(`${lot.organizer || ""} ${lot.title || ""}`);
+  const hay = up(`${lot.organizer || ""} ${lot.community || ""} `
+                 + `${lot.address || ""} ${lot.title || ""}`);
   const code = String(lot.code || lot.cadastre_code || "");
   // `marz` is stored as a small integer (the code's first two digits); fall
   // back to the code itself for rows served without it.
