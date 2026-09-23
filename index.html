@@ -140,6 +140,8 @@
     min-width:44px; min-height:38px; display:flex; align-items:center;
     justify-content:center; font-size:16px; cursor:pointer; }
   #statsFrame { flex:1; width:100%; border:0; background:var(--bg); }
+  .reset-btn { color:#111; font-size:16px; text-align:center; text-decoration:none; }
+  .reset-btn:hover { color:#2563eb; }
   .locate-btn { color:#111; font-size:18px; text-align:center; }
   .locate-btn.active { color:#2563eb; }
   /* statistics: a fourth button under zoom +/- and locate */
@@ -232,6 +234,18 @@
       <option value="current"  data-i18n="aPhaseCurrent">Ongoing only</option>
       <option value="upcoming" data-i18n="aPhaseUpcoming">Not started only</option>
       <option value="finished" data-i18n="aPhaseFinished">Finished only</option>
+    </select>
+    <!-- How far back the CLOSED lots go. It never touches an ongoing or a
+         not-yet-started lot: those are the point of the map, and a deadline in
+         the future is not an age. So this only ever trims the tail of finished
+         ones, which is what makes 6 months a safe default rather than a
+         setting someone has to find and change before the list is useful. -->
+    <select id="a-age" style="margin-top:6px">
+      <option value="1"  data-i18n="aAge1">Ended in the last month</option>
+      <option value="3"  data-i18n="aAge3">Ended in the last 3 months</option>
+      <option value="6"  data-i18n="aAge6" selected>Ended in the last 6 months</option>
+      <option value="12" data-i18n="aAge12">Ended in the last year</option>
+      <option value=""   data-i18n="aAgeAll">Finished lots of any age</option>
     </select>
     <!-- Checked by default: this is a map, and a list that ignores where the
          map is pointing is a list of the wrong things. Opening on Yerevan
@@ -349,6 +363,10 @@ const I18N = {
     aPhaseOpen:"Միայն բաց աճուրդները", aPhaseCurrent:"Միայն ընթացիկ աճուրդները",
     aPhaseUpcoming:"Միայն չմեկնարկած աճուրդները", aPhaseFinished:"Միայն ավարտված աճուրդները",
     aPhaseAll:"Բոլոր աճուրդները",
+    aAge1:"Ավարտված վերջին ամսում", aAge3:"Ավարտված վերջին 3 ամսում",
+    aAge6:"Ավարտված վերջին 6 ամսում", aAge12:"Ավարտված վերջին տարում",
+    aAgeAll:"Ավարտվածները՝ առանց ժամկետի սահմանափակման",
+    resetTitle:"Ցույց տալ ամբողջ քարտեզը",
     aRegionOff:"Քարտեզի տեսանելի հատվածում մարզի ընտրությունը չի կիրառվում։",
     aQueryPh:"Լոտի համար, ծածկագիր կամ հասցե",
     aInView:"Քարտեզի տեսանելի հատվածում", aRefresh:"↻ Թարմացնել", aNone:"Աճուրդներ չեն գտնվել։",
@@ -391,6 +409,10 @@ const I18N = {
     aPhaseOpen:"Open auctions only", aPhaseCurrent:"Ongoing only",
     aPhaseUpcoming:"Not started only", aPhaseFinished:"Finished only",
     aPhaseAll:"All auctions",
+    aAge1:"Ended in the last month", aAge3:"Ended in the last 3 months",
+    aAge6:"Ended in the last 6 months", aAge12:"Ended in the last year",
+    aAgeAll:"Finished lots of any age",
+    resetTitle:"Show the whole map",
     aRegionOff:"The region filter does not apply while the map view is used.",
     aQueryPh:"Lot number, cadastral code or address",
     aInView:"In current map view", aRefresh:"↻ Refresh", aNone:"No auctions found.",
@@ -433,6 +455,10 @@ const I18N = {
     aPhaseOpen:"Только открытые аукционы", aPhaseCurrent:"Только текущие",
     aPhaseUpcoming:"Только не начавшиеся", aPhaseFinished:"Только завершённые",
     aPhaseAll:"Все аукционы",
+    aAge1:"Завершённые за последний месяц", aAge3:"Завершённые за 3 месяца",
+    aAge6:"Завершённые за 6 месяцев", aAge12:"Завершённые за год",
+    aAgeAll:"Завершённые за любой срок",
+    resetTitle:"Показать всю карту",
     aRegionOff:"Фильтр по марзу не применяется при выборе области карты.",
     aQueryPh:"Номер лота, кадастровый код или адрес",
     aInView:"В текущей области карты", aRefresh:"↻ Обновить", aNone:"Аукционы не найдены.",
@@ -478,6 +504,7 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-html]").forEach(el => el.innerHTML = t(el.dataset.i18nHtml));
   document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
   document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
+  const rb = document.querySelector(".reset-btn"); if (rb) rb.title = t("resetTitle");
   const lb = document.querySelector(".locate-btn"); if (lb) lb.title = t("locateTitle");
   const sb = document.getElementById("tab-stats");
   if (sb) sb.title = t("tabStats");
@@ -1734,6 +1761,23 @@ async function traceBoundary(lat, lng, area, label = "") {
 // ---- Show my position (mobile-friendly geolocation) ---------------------
 let meMarker = null, meCircle = null, watching = false, firstFix = false;
 
+// Reset view: back to the whole country, joined under the zoom +/- bar.
+// Placed FIRST of the extras, next to the zoom buttons it undoes -- zooming in
+// far enough to lose the map is easy, and finding the way out should not need
+// a dozen clicks on the minus.
+const resetBtn = L.DomUtil.create("a", "reset-btn", map.zoomControl.getContainer());
+resetBtn.href = "#"; resetBtn.title = t("resetTitle"); resetBtn.innerHTML = "⤢";
+resetBtn.setAttribute("role", "button");
+L.DomEvent.disableClickPropagation(resetBtn);
+L.DomEvent.on(resetBtn, "click", (e) => {
+  L.DomEvent.stop(e);
+  // AM_BOUNDS, not the lots on screen: "show me the whole map" is a question
+  // about the country, and fitting the current selection would answer a
+  // different one -- and answer it with nothing at all when the filters
+  // happen to match no located lot.
+  map.fitBounds(AM_BOUNDS, { animate: true });
+});
+
 // Locate button = a third button joined under the zoom +/- bar (native look)
 const locBtn = L.DomUtil.create("a", "locate-btn", map.zoomControl.getContainer());
 locBtn.href = "#"; locBtn.title = t("locateTitle"); locBtn.innerHTML = "◎";
@@ -1834,10 +1878,24 @@ const fmtPrice = (n) => n == null ? "" : n.toLocaleString("hy-AM") + "֏";
 // Auction dates are stored as the site prints them — Yerevan wall-clock with
 // no zone — so say so, otherwise a visitor abroad sees the wrong days-left.
 const SITE_TZ = "+04:00";
-const daysLeft = (iso) => {
+/** A stored deadline as epoch ms, or null if it is not a date.
+ *
+ * Auction dates are Yerevan wall-clock with no zone marker, so the offset has
+ * to be supplied or the browser reads them in ITS zone -- four hours out for
+ * someone in London, a whole day near midnight. daysLeft() has always done
+ * this inline; the age filter needs the same parse, and two copies of a
+ * timezone rule is how they drift apart.
+ */
+const endsMs = (iso) => {
   const s = String(iso || "").trim().replace(" ", "T");
+  if (!s) return null;
   const t = Date.parse(/[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + SITE_TZ);
-  return Number.isFinite(t) ? Math.ceil((t - Date.now()) / 86400000) : null;
+  return Number.isFinite(t) ? t : null;
+};
+
+const daysLeft = (iso) => {
+  const t = endsMs(iso);                 // one parse, shared with the age filter
+  return t == null ? null : Math.ceil((t - Date.now()) / 86400000);
 };
 
 /**
@@ -2037,6 +2095,38 @@ function renderAuctions() {
   // with what the card shows.
   if (phase === "open") rows = rows.filter(a => phaseOf(a) !== "finished");
   else if (phase) rows = rows.filter(a => phaseOf(a) === phase);
+  // AGE, and only of the finished.
+  //
+  // "The last 6 months" is a statement about history, so it is applied to
+  // history alone: a lot that is running, or has not opened yet, has a
+  // deadline in the FUTURE, and a future date has no age to be outside a
+  // window. Filtering those on the same rule would empty the map at the
+  // default setting, which is the opposite of what a default should do.
+  //
+  // A finished lot whose end date we could not read stays visible. endsAtOf()
+  // returns null for a deadline the row itself contradicts (ends before it
+  // starts -- lots 3930 and 4373), and hiding a lot on a date already known to
+  // be wrong is a worse error than showing one that is too old.
+  //
+  // The phase test below is DEFENSIVE, not load-bearing, and it is worth
+  // saying so: phaseOf() derives "finished" from this same date, so a lot with
+  // a readable past deadline is already finished, and one the test would save
+  // has an unreadable date and is kept by the null branch anyway. Deleting the
+  // line changes no output today -- measured, not assumed. It stays because it
+  // states the rule, and because the moment phaseOf() stops deriving the phase
+  // from the date (trusting statusCode for a lot the crawler never closed, say)
+  // it becomes the only thing keeping live lots on the map.
+  const months = +document.getElementById("a-age").value || 0;
+  if (months) {
+    const cut = new Date();
+    cut.setMonth(cut.getMonth() - months);
+    const cutMs = cut.getTime();
+    rows = rows.filter(a => {
+      if (phaseOf(a) !== "finished") return true;
+      const ms = endsMs(endsAtOf(a));
+      return ms == null || ms >= cutMs;
+    });
+  }
   // matchRegion (regions.js) keys off the cadastral code's marz digits and
   // falls back to case-insensitive text — see the notes there.
   //
@@ -2144,10 +2234,42 @@ const drawn = new Map();
 
 // Wraps focusAuction so the clicked card shows a spinner while we look the
 // parcel up — the cadastre round-trip plus tracing takes a few seconds.
+/**
+ * The element that actually scrolls, walking up from a card.
+ *
+ * It is not the same element on the two layouts -- the desktop panel scrolls
+ * itself (`.panel { overflow:auto }`), the mobile bottom sheet scrolls
+ * `#panelBody` -- so naming either one hard-codes a bug into the other, and
+ * the symptom is a button that silently does nothing on exactly one of them.
+ * `.alist` is a flex column with no overflow of its own and is never it.
+ */
+function scrollParent(el) {
+  for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+    const ov = getComputedStyle(n).overflowY;
+    if ((ov === "auto" || ov === "scroll") && n.scrollHeight > n.clientHeight + 4) return n;
+  }
+  return null;
+}
+
+/** Bring a card to the top of the list, so the map below it is clear. */
+function cardToTop(el) {
+  const box = scrollParent(el);
+  if (!box) return;
+  // Measured against the container, not the viewport: offsetTop is relative to
+  // the offsetParent, which need not be either of them.
+  const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top
+              + box.scrollTop;
+  box.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+
 async function pickAuction(a, el) {
   if (el.classList.contains("busy")) return;
   for (const c of document.querySelectorAll(".acard.sel")) c.classList.remove("sel");
   el.classList.add("sel", "busy");
+  // Before the lookup, not after: the scroll is what frees the map, and the
+  // lookup can take seconds. Waiting for it would put the parcel on screen
+  // underneath the panel for the whole time it takes to arrive.
+  cardToTop(el);
   aStatus(t("aLoading"));
   // Hold the spinner briefly even on a cache hit, so the click is never silent.
   const shown = new Promise(r => setTimeout(r, 400));
@@ -2482,6 +2604,9 @@ document.getElementById("aClear").onclick = () => {
   document.getElementById("a-region").value = "";
   document.getElementById("a-q").value = "";
   document.getElementById("a-phase").value = "";
+  // Back to 6 months, not to "any age". Clear means "the view I started with",
+  // and the view someone starts with is the default.
+  document.getElementById("a-age").value = "6";
   // A search term, so Clear resets it -- unlike "in current map view", which
   // is a view mode and stays where the user put it.
   document.getElementById("a-source").value = "";
@@ -2498,7 +2623,7 @@ document.getElementById("aClear").onclick = () => {
   renderAuctions();                     // back to the unfiltered list
   syncURL();                            // and an address bar that agrees
 };
-for (const id of ["a-phase", "a-view", "a-region", "a-source"])
+for (const id of ["a-phase", "a-age", "a-view", "a-region", "a-source"])
   document.getElementById(id).onchange = renderAuctions;
 // Filter as you type — the list is already in memory, so there is nothing to wait for.
 document.getElementById("a-q").addEventListener("input", renderAuctions);
