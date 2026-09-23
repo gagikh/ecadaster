@@ -81,7 +81,7 @@ const API = "https://cadastre-worker.ecadaster.workers.dev";
 
 const I18N = {
   hy: { title:"Աճուրդների վիճակագրություն", map:"Քարտեզ", open:"Միայն բաց աճուրդները",
-        all:"Բոլորը", lots:"Լոտեր", withCode:"Ծածկագրով", withArea:"Մակերեսով (կադաստրից)",
+        all:"Բոլորը", lots:"Լոտեր", withCode:"Ծածկագրով", withArea:"Մակերեսով",
         totalValue:"Ընդհանուր մեկնարկային արժեք", priceMin:"Նվազագույն գին",
         priceMed:"Միջին (մեդիան) գին", priceMax:"Առավելագույն գին",
         sqmAvg:"Միջին ֏/մ²", sqmMin:"Նվազագույն ֏/մ²", sqmMax:"Առավելագույն ֏/մ²",
@@ -101,7 +101,7 @@ const I18N = {
                 + "իսկ մակերեսը՝ ամբողջ հողամասինը։ Այդ լոտերի ֏/մ²-ը "
                 + "իրականից ցածր է ցույց տրվում։" },
   en: { title:"Auction statistics", map:"Map", open:"Open auctions only",
-        all:"All", lots:"Lots", withCode:"With code", withArea:"With area (from cadastre)",
+        all:"All", lots:"Lots", withCode:"With code", withArea:"With area",
         totalValue:"Total starting value", priceMin:"Lowest price",
         priceMed:"Median price", priceMax:"Highest price",
         sqmAvg:"Average ֏/m²", sqmMin:"Lowest ֏/m²", sqmMax:"Highest ֏/m²",
@@ -121,7 +121,7 @@ const I18N = {
                 + "parcel (1/5, 1/4, 1/6…) while the area is the whole "
                 + "parcel's, so their ֏/m² reads lower than it is." },
   ru: { title:"Статистика аукционов", map:"Карта", open:"Только открытые аукционы",
-        all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью (из кадастра)",
+        all:"Все", lots:"Лоты", withCode:"С кодом", withArea:"С площадью",
         totalValue:"Общая стартовая стоимость", priceMin:"Минимальная цена",
         priceMed:"Медианная цена", priceMax:"Максимальная цена",
         sqmAvg:"Средняя ֏/м²", sqmMin:"Минимальная ֏/м²", sqmMax:"Максимальная ֏/м²",
@@ -288,6 +288,15 @@ function render() {
   const prices = rows.map(a => a.priceStart).filter(n => Number.isFinite(n) && n > 0);
   // Two different questions: how many lots we know the area of (a crawl
   // progress number), and how many can yield ֏/m² (needs a price too).
+  //
+  // BOTH COMPLETENESS FIGURES ARE OVER rows.length, and that is not cosmetic.
+  // This card used to read "with area: N/coded", on the assumption that an
+  // area could only arrive with a code -- true when e-auctions was the only
+  // source, because there the area comes from a registry lookup that needs the
+  // code first. ajurd prints «Մակերես (քմ)» on the lot page, so 34 of its lots
+  // (2026-09-23) have an area and no code, and the card printed 983/960: a
+  // numerator larger than its denominator, which reads as a data-corruption
+  // bug rather than as two measurements of different things.
   const withAnyArea = rows.filter(a => Number.isFinite(a.area) && a.area > 0);
   const withArea = withAnyArea.filter(a => Number.isFinite(a.priceStart) && a.priceStart > 0);
   const sqm = withArea.map(a => a.priceStart / a.area);
@@ -336,7 +345,7 @@ function render() {
     ${CLIPPED ? `<section><p class="note">⚠ ${t("clipped")}</p></section>` : ""}
     <div class="cards">
       ${card(t("lots"), rows.length, "",
-             `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withAnyArea.length}/${coded}`)}
+             `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withAnyArea.length}/${rows.length}`)}
       ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc",
              `${money(prices.reduce((s, n) => s + n, 0))} · ${prices.length} ${t("lotsShort")}`)}
       ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
