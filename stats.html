@@ -44,8 +44,23 @@
   .bar:hover { fill:var(--good); }
   .axis { stroke:var(--line); stroke-width:1; }
   .note { color:var(--mut); font-size:12px; }
-  table { width:100%; border-collapse:collapse; font-size:12px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  table { width:100%; border-collapse:collapse; font-size:12px; table-layout:auto; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line);
+           vertical-align:top; }
+  /* Every column except the place name is a fixed-shape value -- a cadastral
+     code, an area, a price, a date -- and none of them may wrap. A code breaks
+     at each of its three hyphens, so "05-055-0238-0028" was rendering as four
+     stacked lines while the place column sat half empty beside it: the browser
+     sizes an auto table by each column's MINIMUM content width, and a
+     hyphenated code's minimum is one group.
+     width:1% with nowrap is the shrink-wrap idiom -- the declared width loses
+     to the content, and the place column absorbs all the slack. */
+  td.fix, th.fix { white-space:nowrap; width:1%; }
+  /* The one column allowed to wrap, and it needs a ceiling: `community` comes
+     from a parser that can over-capture (3 ajurd rows hold 1,500+ characters
+     of lot description), and one such cell makes the row fifteen lines tall. */
+  td.place { max-width:22ch; overflow:hidden; text-overflow:ellipsis;
+             white-space:nowrap; }
   th { color:var(--mut); font-weight:500; }
   td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
   tr:hover td { background:#16202e; }
@@ -160,8 +175,22 @@ const place = (hy) => placeIn(hy, LANG);
  * single "—" bar and left the table's place column blank for every one of
  * them.
  */
+// A community name is a word or three. `community` is parsed from the lot page
+// by ajurd/parser.mjs's between(), which anchors on the first occurrence of a
+// label in the whole flattened document -- so when the labels come in an
+// unexpected order it captures everything up to the next one. Three rows
+// (27498, 10736, 10738) hold 1,500+ characters of lot description in this
+// column. Nothing downstream can use that as a place, so it is not a place:
+// fall through to the organiser, then to "—". The parser is where the real fix
+// belongs; this is the display refusing to repeat a value it can see is wrong.
+const PLACE_MAX = 40;
+const plausiblePlace = (v) => {
+  const s = String(v || "").trim();
+  return s && s.length <= PLACE_MAX ? s : "";
+};
 const placeOf = (a) =>
-  String(a.community || a.organizer || "—").replace(/\s+համայնք$/u, "");
+  (plausiblePlace(a.community) || plausiblePlace(a.organizer) || "—")
+    .replace(/\s+համայնք$/u, "");
 
 let LOTS = [];
 // Set from the X-Truncated header the Worker already sends. Two sources now
@@ -186,6 +215,21 @@ const short = (n) => {
   if (a >= 1e3) return Math.round(n / 1e3) + sp + u[0] + "֏";
   return Math.round(n) + "֏";
 };
+/** ֏/m², which is the one money figure here that is usually under 10.
+ *
+ * money() rounds to whole dram, which is right for a 27,452֏ lot and destroys
+ * this column: the twelve cheapest parcels span 0.60 to 4.18 ֏/m² and printed
+ * as 1, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4 -- a table whose whole purpose is the
+ * ordering, showing four rows as the same number. Two decimals below 100,
+ * whole dram above, so the big figures do not grow a meaningless ".00".
+ */
+const perSqm = (n) => n == null || !Number.isFinite(n) ? "—"
+  // Two decimals ALWAYS below 100, not +toFixed(2) which strips a trailing
+  // zero: this column is right-aligned tabular-nums, and "0.6" beside "1.62"
+  // puts the decimal points in different places, which is the one thing
+  // tabular figures exist to prevent.
+  : (Math.abs(n) < 100 ? n.toFixed(2) : nf().format(Math.round(n))) + "֏";
+
 const areaFmt = (m2) => m2 == null ? "—"
   : m2 >= 10000 ? (m2 / 10000).toFixed(2) + " ha" : Math.round(m2) + " m²";
 
@@ -351,10 +395,10 @@ function render() {
       ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
       ${card(t("priceMed"), money(median(prices)))}
       ${card(t("priceMax"), money(prices.length ? Math.max(...prices) : null))}
-      ${card(t("sqmAvg"), money(sqm.length ? sqm.reduce((s, n) => s + n, 0) / sqm.length : null), "acc2")}
-      ${card(t("sqmMed"), money(median(sqm)), "acc2")}
-      ${card(t("sqmMin"), money(sqm.length ? Math.min(...sqm) : null), "acc2")}
-      ${card(t("sqmMax"), money(sqm.length ? Math.max(...sqm) : null), "acc2")}
+      ${card(t("sqmAvg"), perSqm(sqm.length ? sqm.reduce((s, n) => s + n, 0) / sqm.length : null), "acc2")}
+      ${card(t("sqmMed"), perSqm(median(sqm)), "acc2")}
+      ${card(t("sqmMin"), perSqm(sqm.length ? Math.min(...sqm) : null), "acc2")}
+      ${card(t("sqmMax"), perSqm(sqm.length ? Math.max(...sqm) : null), "acc2")}
     </div>
 
     ${sqm.length && hasShares
@@ -387,17 +431,19 @@ function render() {
       <h2>${t("cheapest")}</h2><div class="sub">${t("perSqm")}${
         hasShares ? " · ⚠ " + t("shareWarn") : ""}</div>
       <table>
-        <tr><th>${t("lot")}</th><th>${t("placeCol")}</th>
-            <th class="n">${t("area")}</th><th class="n">${t("price")}</th>
-            <th class="n">${t("perSqm")}</th><th>${t("ends")}</th></tr>
-        ${cheapest.map(a => `<tr>
-          <td><a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
-          <td>${esc(place(placeOf(a)))}</td>
-          <td class="n">${areaFmt(a.area)}</td>
-          <td class="n">${money(a.priceStart)}</td>
-          <td class="n">${money(a.sqm)}</td>
-          <td>${esc(String(a.endsAt || "").slice(0, 10) || "—")}</td>
-        </tr>`).join("")}
+        <tr><th class="fix">${t("lot")}</th><th>${t("placeCol")}</th>
+            <th class="n fix">${t("area")}</th><th class="n fix">${t("price")}</th>
+            <th class="n fix">${t("perSqm")}</th><th class="fix">${t("ends")}</th></tr>
+        ${cheapest.map(a => {
+          const where = place(placeOf(a));
+          return `<tr>
+          <td class="fix"><a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">${esc(a.code || a.id)}</a></td>
+          <td class="place" title="${esc(where)}">${esc(where)}</td>
+          <td class="n fix">${areaFmt(a.area)}</td>
+          <td class="n fix">${money(a.priceStart)}</td>
+          <td class="n fix">${perSqm(a.sqm)}</td>
+          <td class="fix">${esc(String(a.endsAt || "").slice(0, 10) || "—")}</td>
+        </tr>`; }).join("")}
       </table>
     </section>` : ""}
   `;
