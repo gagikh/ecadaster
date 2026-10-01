@@ -391,7 +391,7 @@ const I18N = {
     plotting:n=>`Գծվում է ${n} ծածկագիր…`, plotted:(a,b)=>`Գծվեց ${a} / ${b}։`,
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
-    rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։",
+    rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։", cadastreMapOff:"Կադաստրի քարտեզը հիմա հասանելի չէ՝ դրա շերտերն անջատված են։",
     inferred:"⚠ եզրագիծը ենթադրված է. կադաստրի կետը անկյուն է, և այս հողամասն է միակը, որ դիպչում է կետին և համապատասխանում է մակերեսին",
     upstreamDown:"կադաստրը չի պատասխանում — ծածկագիրը սխալ չէ, կրկին փորձեք",
     ambiguousCode:"կադաստրը մի քանի հողամաս վերադարձրեց — ճշգրիտ համընկնում չկա",
@@ -437,7 +437,7 @@ const I18N = {
     plotting:n=>`Plotting ${n} code(s)…`, plotted:(a,b)=>`Plotted ${a} of ${b}.`,
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
-    rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).",
+    rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).", cadastreMapOff:"The cadastre map is unavailable right now, so its layers are turned off.",
     inferred:"⚠ boundary inferred: the cadastre point is a corner, and this was the only parcel touching it that also matches the registered area",
     upstreamDown:"the cadastre is not answering — the code is not wrong, try again",
     ambiguousCode:"the cadastre returned no exact match for this code",
@@ -483,7 +483,7 @@ const I18N = {
     plotting:n=>`Показываю ${n} код(ов)…`, plotted:(a,b)=>`Показано ${a} из ${b}.`,
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
-    rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).",
+    rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).", cadastreMapOff:"Карта кадастра сейчас недоступна — её слои отключены.",
     inferred:"⚠ граница выведена косвенно: точка кадастра — угол, и это единственный участок, который её касается и совпадает по площади",
     upstreamDown:"кадастр не отвечает — код верен, попробуйте ещё раз",
     ambiguousCode:"кадастр не вернул точного совпадения по этому коду",
@@ -614,7 +614,7 @@ const cadastreWms = (opts) => new CadastreWMS(WMS, opts);
 // One <img> against the geoportal, once, at load. An image is used rather than
 // fetch() on purpose: loading an image needs no CORS, so this measures exactly
 // what a tile request will do. No answer in 4s counts as no.
-function probeWms(onDirect) {
+function probeWms(onDirect, onNotDirect) {
   const img = new Image();
   let settled = false;
   const done = (ok) => {
@@ -622,6 +622,7 @@ function probeWms(onDirect) {
     settled = true;
     img.onload = img.onerror = null;
     if (ok) { wmsMode = "direct"; onDirect(); }
+    else if (onNotDirect) onNotDirect();
   };
   const timer = setTimeout(() => done(false), 4000);
   img.onload  = () => { clearTimeout(timer); done(img.width > 0); };
@@ -716,7 +717,46 @@ const cadastreLayers = () => [...Object.values(overlays),
 
 // Ask the geoportal directly, once. If it answers, repaint what is on the map
 // — only the visible layers, since Leaflet redraws a detached layer for nothing.
-probeWms(() => cadastreLayers().forEach(l => { if (map.hasLayer(l)) l.redraw(); }));
+probeWms(() => cadastreLayers().forEach(l => { if (map.hasLayer(l)) l.redraw(); }),
+         () => probeWorkerWms());
+
+// The direct path failed, so tiles come through the Worker -- which, when the
+// geoportal refuses it too, answers 200 with a 1x1 stand-in image rather than
+// an error (so a dead layer never breaks the map). Leaflet cannot tell that
+// stand-in from a real tile, and until build 2026-10-01 it was not even
+// transparent: rgba(0,0,255,0.5), stretched over every tile -- a blue haze
+// across the whole country. So ask once, the way a tile would, and look:
+// the stand-in is under 100 bytes (and newer Workers also say so in
+// X-Upstream-Status); any real 512px tile is far larger.
+async function probeWorkerWms() {
+  const qs = new URLSearchParams({
+    service: "WMS", request: "GetMap", version: "1.1.1", layers: "buildings",
+    styles: "", format: "image/png", transparent: "true", width: "256", height: "256",
+    srs: "EPSG:4326", bbox: "44.50,40.17,44.52,40.19", _: String(Date.now()) });
+  try {
+    const r = await fetch(WMS + "?" + qs, { cache: "no-store" });
+    const buf = await r.arrayBuffer();
+    const upstream = r.headers.get("X-Upstream-Status");
+    if (!r.ok || upstream || buf.byteLength < 100) cadastreMapOff();
+  } catch { cadastreMapOff(); }
+}
+
+// No cadastre map: take its layers off rather than paint placeholders, and
+// say why. Not commit()ed on purpose -- the user's saved choice of layers is
+// kept, so the overlays come back by themselves on the first visit after the
+// geoportal reopens.
+function cadastreMapOff() {
+  Object.values(overlays).forEach(l => map.removeLayer(l));
+  ["ov-parcels", "ov-plabels", "ov-buildings", "ov-blocks", "do-trace"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.checked = false; el.disabled = true; }
+  });
+  const sel = document.getElementById("basemap");
+  [...sel.options].forEach(op => { if (bases[op.value] instanceof CadastreWMS) op.disabled = true; });
+  if (currentBase instanceof CadastreWMS) { switchBase("osm"); sel.value = "osm"; }
+  overlayWarned = true;                          // no zoom hint for layers that are gone
+  status(t("cadastreMapOff"));
+}
 
 // Two different failures, and they need different answers.
 //

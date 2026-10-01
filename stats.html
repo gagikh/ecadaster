@@ -389,7 +389,7 @@ function render() {
     ${CLIPPED ? `<section><p class="note">⚠ ${t("clipped")}</p></section>` : ""}
     <div class="cards">
       ${card(t("lots"), rows.length, "",
-             `${t("withCode")}: ${coded}/${rows.length} · ${t("withArea")}: ${withAnyArea.length}/${rows.length}`)}
+             `${t("withCode")}: ${coded}/${rows.length}<br>${t("withArea")}: ${withAnyArea.length}/${rows.length}`)}
       ${card(t("totalValue"), short(prices.reduce((s, n) => s + n, 0)), "acc",
              `${money(prices.reduce((s, n) => s + n, 0))} · ${prices.length} ${t("lotsShort")}`)}
       ${card(t("priceMin"), money(prices.length ? Math.min(...prices) : null))}
