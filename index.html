@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-08-24-honest-errors">
+<meta name="build" content="2026-10-01-review1">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -695,7 +695,9 @@ function switchBase(key) {
 document.getElementById("basemap").onchange = (e) => { switchBase(e.target.value); commit(); };
 
 // Cadastre overlays (WMS). Leaflet requests EPSG:3857; GeoServer reprojects from EPSG:2400000.
-const startOpacity = 0.7;
+// Read from the slider, so the layers and the control agree from the first paint
+// (the slider said 25% while the layers were drawn at 70%).
+const startOpacity = document.getElementById("opacity").value / 100;
 const overlays = {
   parcels: cadastreWms({ layers:"parcels", format:"image/png", transparent:true,
     version:"1.1.1", opacity:startOpacity, minZoom:14, maxZoom:22, tileSize:512, updateWhenIdle:true, attribution:CADASTRE_ATTR }),
@@ -1018,13 +1020,14 @@ function syncPointGroup() {
  * between parcels), "refused" (the cadastre answered 403 to our session), or
  * "missing" (the cadastre genuinely has no such code).
  */
-async function fetchPolygon(code) {
+async function fetchPolygon(code, { timeoutMs } = {}) {
   let d;
   try {
-    const r = await fetch(API + "/parcel?code=" + encodeURIComponent(code));
+    const r = await fetch(API + "/parcel?code=" + encodeURIComponent(code),
+                          timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {});
     d = await r.json();
   } catch (e) {
-    return { ok: false, reason: "down" };      // network, CORS, non-JSON
+    return { ok: false, reason: "down" };      // network, CORS, non-JSON, our own timeout
   }
   if (d.success && d.coords && d.coords.length) return { ok: true, data: d };
   const err = String(d.error || "");
@@ -1034,13 +1037,59 @@ async function fetchPolygon(code) {
   // the 5xx test because the Worker wraps this in a 502, and before "missing"
   // because reporting a real parcel as nonexistent is the one wrong answer
   // a user will act on.
-  if (/session was refused|anonymous access is closed|CADASTRE_COOKIE|cadastre refused|map\.astat\.am/i.test(err))
+  if (/session was refused|anonymous access is closed|CADASTRE_COOKIE/i.test(err))
     return { ok: false, reason: "refused" };
   // "timeout", "unavailable", "unreachable", "down" — anything that is about
-  // the upstream rather than about this code.
-  if (/timeout|unavailable|unreachable|stalled|down|5\d\d/i.test(err))
+  // the upstream (the cadastre or its astat fallback) rather than this code.
+  if (/timeout|unavailable|unreachable|stalled|down|astat|5\d\d/i.test(err))
     return { ok: false, reason: "down" };
   return { ok: false, reason: "missing" };
+}
+
+// ---- Shared by both tabs --------------------------------------------------
+// The Codes tab and the Auctions tab draw the same thing -- a parcel from a
+// /parcel answer, a stored ring or a trace -- and used to do it with three
+// hand-copied blocks that had already drifted (one opened its popup at the
+// centre, one did not; one validated the lot URL, none escaped the text).
+// Everything that turns data into a shape or into HTML goes through here.
+
+/** Text for innerHTML. Codes come from the URL and lot text from two public
+ *  websites, so nothing reaches the DOM unescaped. */
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+/** An href we generated ourselves: https only, escaped. */
+const safeUrl = (u) => /^https:\/\//i.test(String(u || "")) ? esc(u) : "#";
+/** A layer's frame for fitBounds, polygon or marker alike. */
+const boundsOf = (layer) => layer.getBounds ? layer.getBounds()
+  : L.latLngBounds([layer.getLatLng(), layer.getLatLng()]).pad(0.002);
+
+/**
+ * Draw one parcel: an outline (plus its centre pin) when there are three or
+ * more points, otherwise a pin on the vertex. Returns what both tabs keep:
+ * { layer, isPoly, centre, pin }.
+ */
+function drawParcel({ coords, holes = null, vertex = null, color, weight = 2,
+                      dash = null, popup, group = map }) {
+  const isPoly = !!(coords && coords.length >= 3);
+  const at = vertex || (coords && coords[0]);
+  const layer = isPoly
+    ? parcelPolygon(coords, holes, { color, weight, fillColor: color,
+                                     fillOpacity: opacityVal(), dashArray: dash })
+    : L.marker(at, { icon: pinIcon(color) });
+  layer.bindPopup(popup, popupOpts());
+  layer.addTo(group);
+  const centre = isPoly ? parcelCentre(coords) : at;
+  if (isPoly) popupAtCentre(layer, centre);
+  return { layer, isPoly, centre, pin: isPoly ? addRefPoint(centre, color, popup) : null };
+}
+
+/** Trace an outline from the cadastre raster, when tracing is switched on.
+ *  -> { ring, inferred } or { ring:null, why } */
+async function traceOutline(vertex, area, label) {
+  if (!document.getElementById("do-trace").checked) return { ring: null, why: t("aTraceOff") };
+  const tr = await traceBoundary(vertex[0], vertex[1], area || 1000, label);
+  if (tr && tr.length >= 3) return { ring: tr, inferred: !!tr.inferred };
+  return { ring: null, why: (window.__trace && window.__trace.result) || "no ring" };
 }
 
 /**
@@ -1076,7 +1125,7 @@ function clearAll(alsoInput = false) {
 }
 
 function popupHtml(p) {
-  return `<b>${p.code}</b><br>
+  return `<b>${esc(p.code)}</b><br>
     ${t("popupArea")}: ${fmtArea(p.area)}` +
     (p.isPoly ? `<br>${t("popupPerim")}: ${fmtLen(p.perim)}<br>${t("popupVerts")}: ${p.coords.length}`
               : `<br><i>${t("pointOnly")}</i>`) +
@@ -1087,7 +1136,7 @@ function popupHtml(p) {
     // exact === false means the worker matched a row that does not carry this
     // code. It is not refused (see pickRow) but it must not look like a fact.
     (p.exact === false ? `<br><b style="color:#b45309">${t("unconfirmed")}</b>` : "") +
-    (p.updated ? `<br><span style="color:#666">${p.updated}</span>` : "") +
+    (p.updated ? `<br><span style="color:#666">${esc(p.updated)}</span>` : "") +
     (p.via ? `<br><span style="color:#666">${t("viaAstat")}</span>` : "");
 }
 
@@ -1124,17 +1173,16 @@ function renderMeasurements() {
 function renderLegend() {
   document.getElementById("legend").innerHTML = plotted.map((p,i) => p.ok
     ? `<div class="legrow"><span class="swatch" data-i="${i}" style="background:${p.color}"></span>
-         <span class="code">${p.code}</span><span class="area">${fmtArea(p.area)}</span></div>`
+         <span class="code">${esc(p.code)}</span><span class="area">${fmtArea(p.area)}</span></div>`
     : `<div class="legrow"><span class="swatch" style="background:#374151"></span>
-         <span class="code">${p.code}</span> <span class="miss">${
+         <span class="code">${esc(p.code)}</span> <span class="miss">${
            t(p.reason === "down" ? "upstreamDown"
            : p.reason === "ambiguous" ? "ambiguousCode"
            : p.reason === "refused" ? "cadastreRefused" : "notFound")}</span></div>`
   ).join("");
   document.querySelectorAll("#legend .swatch[data-i]").forEach(el => el.onclick = () => {
     const p = plotted[+el.dataset.i];
-    if (p && p.layer) { const b = p.isPoly ? p.layer.getBounds() : L.latLngBounds([p.coords[0], p.coords[0]]).pad(0.002);
-      map.fitBounds(b, { maxZoom:18 }); p.layer.openPopup(); }
+    if (p && p.layer) { map.fitBounds(boundsOf(p.layer), { maxZoom:18 }); p.layer.openPopup(); }
   });
 }
 
@@ -1150,9 +1198,21 @@ function renderLegend() {
 // leave the person wondering which of their codes went missing. A token with
 // no digits at all ("code:", a stray word) is just packaging, and dropped.
 const CODE_RE = /\d{2}-\d{3}-\d{4}-\d{4}/;
+// "02-58-1-1" is the same parcel as 02-058-0001-0001 (the Worker pads it the
+// same way), so it is padded here too -- otherwise the legend, the share link
+// and the auction list disagree about what the code is.
+const CODE_WIDTHS = [2, 3, 4, 4];
+const padCode = (s) => {
+  const g = String(s).split("-");
+  return g.length === 4 && g.every((x, i) => /^\d+$/.test(x) && x.length <= CODE_WIDTHS[i])
+    ? g.map((x, i) => x.padStart(CODE_WIDTHS[i], "0")).join("-") : null;
+};
 const cleanCode = (s) => {
-  const m = CODE_RE.exec(String(s).replace(/[‐-―−]/g, "-"));
-  return m ? m[0] : String(s).trim();
+  const v = String(s).replace(/[‐-―−]/g, "-");
+  const m = CODE_RE.exec(v);
+  if (m) return m[0];
+  const loose = /\d{1,2}-\d{1,3}-\d{1,4}-\d{1,4}/.exec(v);
+  return (loose && padCode(loose[0])) || String(s).trim();
 };
 const readCodes = (v) => String(v).split(/[\s,;]+/).map(cleanCode).filter(s => s && /\d/.test(s));
 
@@ -1169,44 +1229,26 @@ async function plotAll(skipFit = false) {
       const got = await fetchPolygon(code);
       if (!got.ok) { plotted.push({ code, ok:false, reason: got.reason }); continue; }
       const res = got.data;
-      const coords = res.coords;
       const color = PALETTE[colorIdx++ % PALETTE.length];
-      // Hold the registry's own vertex before tracing overwrites `coords` in
-      // place. It is the fallback position for a parcel that never gets an
-      // outline; once there IS an outline the pin goes to its centre instead.
-      const vertex = coords[0];
-      // The cadastre currently serves only a single vertex for most parcels
-      // ("Parcel geometry service is disabled"), so fall back to a marker.
-      let isPoly = coords.length >= 3, traced = false, inferred = false;
-      if (!isPoly && document.getElementById("do-trace").checked) {
-        const t = await traceBoundary(coords[0][0], coords[0][1], res.area || 1000, code);
-        if (t && t.length >= 3) {
-          inferred = !!t.inferred;
-          // `coords` is res.coords refilled in place, NOT `t` -- so anything
-          // riding on the traced array has to be carried across by hand.
-          coords.length = 0; coords.push(...t); isPoly = true; traced = true;
-          if (t.holes) coords.holes = t.holes;
+      // The registry's own vertex: the pin when no outline is found.
+      const vertex = res.coords[0];
+      let coords = res.coords, traced = false, inferred = false;
+      let holes = Array.isArray(res.holes) ? res.holes : null;
+      if (coords.length < 3) {
+        const tr = await traceOutline(vertex, res.area, code);
+        if (tr.ring) {
+          coords = tr.ring; holes = tr.ring.holes || null;
+          traced = true; inferred = tr.inferred;
         }
       }
-      // A traced hole beats a served one: if we traced, the registry gave us
-      // no ring to have holes on in the first place.
-      const holes = coords.holes || (Array.isArray(res.holes) ? res.holes : null);
-      const layer = isPoly
-        ? parcelPolygon(coords, holes, { color, weight:2, fillColor:color,
-                                         fillOpacity:opacityVal(),
-                                         dashArray: dashFor(traced, inferred) }).addTo(map)
-        : L.marker(vertex, { icon: pinIcon(color) }).addTo(map);
-      const centre = isPoly ? parcelCentre(coords) : vertex;
-      const p = { code, coords, holes, layer, ok:true, color, isPoly, traced, inferred, centre, exact: res.exact,
+      const isPoly = coords.length >= 3;
+      const p = { code, coords, holes, ok:true, color, isPoly, traced, inferred, exact: res.exact,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
                   perim: isPoly ? perimeter(coords) : 0, updated: res.updated, via: res.via };
-      layer.bindPopup(popupHtml(p), popupOpts());
-      // Outline AND pin, not one or the other — and the pin sits at the
-      // outline's centre. Only when there is an outline: without one the
-      // marker above already IS the parcel layer.
-      if (isPoly) p.pin = addRefPoint(centre, color, popupHtml(p));
+      Object.assign(p, drawParcel({ coords, holes, vertex, color,
+                                    dash: dashFor(traced, inferred), popup: popupHtml(p) }));
       plotted.push(p);
-      allBounds.push(isPoly ? layer.getBounds() : L.latLngBounds([coords[0], coords[0]]).pad(0.002));
+      allBounds.push(boundsOf(p.layer));
     } catch (err) {
       corsHit = true;
       plotted.push({ code, ok:false });
@@ -1218,6 +1260,9 @@ async function plotAll(skipFit = false) {
   if (allBounds.length && !skipFit) {
     let b = allBounds[0];
     allBounds.slice(1).forEach(x => b = b.extend(x));
+    // A map laid out while hidden (a background tab, a closed pane) reports
+    // a stale size and fitBounds then lands at maxZoom on the wrong spot.
+    map.invalidateSize();
     map.fitBounds(b, { padding:[30,30], maxZoom:19 });
   }
   const okN = plotted.filter(p => p.ok).length;
@@ -1243,7 +1288,7 @@ document.getElementById("codes").addEventListener("keydown", e => {
 });
 
 // ---- Shareable link (full state encoded in the URL) ---------------------
-const OV_MAP = [["ov-parcels","parcels"],["ov-plabels","plabels"],["ov-buildings","buildings"]];
+const OV_MAP = [["ov-parcels","parcels"],["ov-plabels","plabels"],["ov-buildings","buildings"],["ov-blocks","blocks"]];
 
 function buildShareURL() {
   const typed = readCodes(document.getElementById("codes").value);
@@ -1292,18 +1337,26 @@ document.getElementById("share").onclick = async () => {
 async function applyStateFromURL() {
   const q = new URLSearchParams(location.search);
   if (![...q.keys()].length) return;
-  if (q.get("lang")) { LANG = q.get("lang"); applyI18n(); }
+  if (I18N[q.get("lang")]) { LANG = q.get("lang"); applyI18n(); }
   if (q.get("tab")) showTab(q.get("tab"), false);
 
   const base = q.get("base");
-  if (base) { document.getElementById("basemap").value = base; switchBase(base); }
+  if (base && bases[base]) { document.getElementById("basemap").value = base; switchBase(base); }
 
-  const ov = (q.get("ov") || "").split(",").filter(Boolean);
-  OV_MAP.forEach(([id,k]) => {
-    const on = ov.includes(k);
-    document.getElementById(id).checked = on;
-    on ? overlays[k].addTo(map) : map.removeLayer(overlays[k]);
-  });
+  // Only when the link says something about layers -- a hand-written
+  // `?lang=ru` or `?codes=...` used to switch the default overlays off -- and
+  // never once cadastreMapOff() has disabled them (Back/Forward would bring
+  // back layers that only draw a blank stand-in).
+  if (q.has("ov") || q.has("base")) {
+    const ov = (q.get("ov") || "").split(",").filter(Boolean);
+    OV_MAP.forEach(([id,k]) => {
+      const box = document.getElementById(id);
+      if (box.disabled) return;
+      const on = ov.includes(k);
+      box.checked = on;
+      on ? overlays[k].addTo(map) : map.removeLayer(overlays[k]);
+    });
+  }
 
   if (q.get("op")  !== null) { document.getElementById("opacity").value = q.get("op"); applyOpacity(); }
   if (q.get("area") !== null) document.getElementById("show-area").checked = q.get("area") === "1";
@@ -2102,14 +2155,13 @@ function paintViewPins(rows) {
       opacity: ph === "finished" ? 0.6 : 1,
     });
     m.bindTooltip(
-      `<b>${a.code || t("aNoCodeTag")}</b>` +
-      (a.title ? `<br>${String(a.title).slice(0, 70)}` : ""),
+      `<b>${esc(a.code || t("aNoCodeTag"))}</b>` +
+      (a.title ? `<br>${esc(String(a.title).slice(0, 70))}` : ""),
       { direction: "top", opacity: 0.95 });
     // Same action as the card, so a pin and its row are interchangeable.
     m.on("click", () => {
       const card = [...document.querySelectorAll(".acard")]
-        .find(el => el.querySelector(".c") &&
-                    el.querySelector(".c").textContent.trim() === (a.code || ""));
+        .find(el => el.dataset.key === a.source + ":" + a.id);
       if (card) { card.scrollIntoView({ block: "nearest" }); pickAuction(a, card); }
       else focusAuction(a);
     });
@@ -2223,7 +2275,7 @@ function renderAuctions() {
   // the filtering, so the map and the panel are always showing the same set.
   if (inView) paintViewPins(rows); else viewLayer.clearLayers();
 
-  list.innerHTML = rows.length ? "" : (AUCTIONS && AUCTIONS.length === 0 && !aStatusHasMsg() ? `<p class="hint">${t("aNone")}</p>` : "");
+  list.innerHTML = rows.length || aStatusHasMsg() ? "" : `<p class="hint">${t("aNone")}</p>`;
   // Warm the position/outline cache for what is on screen, so the first click
   // draws from the database instead of waiting on the cadastre.
   prefetchStored(rows.map(a => a.code).filter(Boolean));
@@ -2232,13 +2284,14 @@ function renderAuctions() {
     const ph = phaseOf(a);
     const el = document.createElement("div");
     el.className = "acard ph-" + ph + (a.code ? "" : " nocode");
+    el.dataset.key = a.source + ":" + a.id;
     // Which site. Now that one list holds both, a lot with no badge would be
     // from whichever site the reader assumed -- and the two have different
     // deposit rules and different bidding.
     const srcTag = a.source && a.source !== "e-auctions"
-      ? `<span class="src">${t("aSrc_" + a.source) || a.source}</span>` : "";
-    el.innerHTML = `<div class="t">${srcTag}${a.title || ""}</div>` +
-      (a.code ? `<div class="c">${a.code}</div>`
+      ? `<span class="src">${esc(t("aSrc_" + a.source) || a.source)}</span>` : "";
+    el.innerHTML = `<div class="t">${srcTag}${esc(a.title)}</div>` +
+      (a.code ? `<div class="c">${esc(a.code)}</div>`
               : `<div class="c nc">${t("aNoCodeTag")}</div>`) +
       `<div class="m">` +
       // On a closed lot the hammer price is the interesting number, so it
@@ -2253,18 +2306,18 @@ function renderAuctions() {
         ? amount(t("aPriceNow"), a.priceNow, "sold") : "") +
       // 0 bids is a fact worth stating, so this tests for null, not falsiness.
       (a.bids != null
-        ? `<span><span class="lbl">${t("aBids")}</span> ${a.bids}</span>` : "") +
+        ? `<span><span class="lbl">${t("aBids")}</span> ${esc(a.bids)}</span>` : "") +
       amount(t("aDeposit"), a.deposit) +
       // A closed lot gets its end date, never a countdown — "today" on an
       // auction that ended last month reads as a live deadline.
       (ph === "finished"
-        ? `<span><span class="lbl">${t("aEnds")}</span> ${String(endsAtOf(a) || "").slice(0, 10)}</span>`
+        ? `<span><span class="lbl">${t("aEnds")}</span> ${esc(String(endsAtOf(a) || "").slice(0, 10))}</span>`
         : d != null ? `<span class="${d <= 2 ? "soon" : ""}">${
             d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")}</span>`
         : a.startsAt ? `<span><span class="lbl">${t("aStarts")}</span> ${
-            String(a.startsAt).slice(0, 16)}</span>` : "") +
-      `<span class="who">${org(a.organizer)}</span>` +
-      `<a class="go" href="${a.url}" target="_blank" rel="noopener" title="${t("aOpenLot")}">↗</a></div>`;
+            esc(String(a.startsAt).slice(0, 16))}</span>` : "") +
+      `<span class="who">${esc(org(a.organizer))}</span>` +
+      `<a class="go" href="${safeUrl(a.url)}" target="_blank" rel="noopener" title="${t("aOpenLot")}">↗</a></div>`;
     el.onclick = (ev) => { if (!ev.target.closest("a")) pickAuction(a, el); };
     list.appendChild(el);
   }
@@ -2350,15 +2403,13 @@ const ringCache = (() => {
 // The `inferred` flag would not survive JSON.stringify on a bare array, and a
 // cached inferred ring redrawn as a confident one is exactly the confusion the
 // dotted style exists to prevent. Store it alongside.
-function rememberRing(code, ring) {
+function rememberRing(code, ring, via = false) {
   try {
-    // A bare array is the common case and stays the cheap one. `inferred` and
-    // `holes` both live on the array object and would not survive
-    // JSON.stringify, so anything carrying either is stored as a record --
-    // and a holed parcel redrawn from cache without its holes is solid orange
-    // over a neighbour's land.
-    ringCache[code] = (ring.inferred || ring.holes)
-      ? { ring, inferred: !!ring.inferred, holes: ring.holes || undefined }
+    // A bare array is the common case and stays the cheap one. `inferred`,
+    // `holes` and "this came from astat" do not survive JSON.stringify on a
+    // bare array, so anything carrying one is stored as a record.
+    ringCache[code] = (ring.inferred || ring.holes || via)
+      ? { ring, inferred: !!ring.inferred, holes: ring.holes || undefined, via: via || undefined }
       : ring;
     const keys = Object.keys(ringCache);
     if (keys.length > 400) delete ringCache[keys[0]];      // keep it bounded
@@ -2369,249 +2420,154 @@ function rememberRing(code, ring) {
 async function focusAuction(a) {
   if (!a.code) {                       // nothing to draw — open the lot instead
     aStatus(t("aNoCode"));
-    if (a.url) window.open(a.url, "_blank", "noopener");
+    if (/^https:\/\//.test(a.url || "")) window.open(a.url, "_blank", "noopener");
     return;
   }
 
   let layer = (drawn.get(a.code) || {}).layer;
   if (!layer) {
-    // Everything below prefers what we already hold over what we could ask
-    // for. In order: an outline stored with the lot, this browser's cache of
-    // earlier traces, then the database's own position, and only then a live
-    // /parcel lookup — which is the only step that needs the cadastre to be up
-    // at all.
-    await storedInFlight;                     // whatever the list prefetched
-    const db = stored.get(a.code) || {};
-    const cached = ringCache[a.code];
-    const knownInferred = !!(cached && !Array.isArray(cached) && cached.inferred);
-
-    // `src === "cadastre"` is the registry's own polygon, which is the one
-    // outline here that is not a reconstruction — it earns a solid line.
-    let known = null, ringSrc = null;
-    if (a.ring && a.ring.length >= 3) { known = a.ring; ringSrc = a.geomSrc; }
-    // `geom` arrives only from /auctions?geom=1, which nothing requests today.
-    // Kept anyway: it costs one branch, and dropping it would mean turning that
-    // flag on some day and silently getting no outlines from it.
-    else if (a.geom) {
-      try {
-        const g = JSON.parse(a.geom);
-        if (g && g.length >= 3) { known = g; ringSrc = a.geomSrc; }
-      } catch { /* a malformed ring is no ring */ }
-    }
-    if (!known && db.ring && db.ring.length >= 3) { known = db.ring; ringSrc = db.src; }
-    if (!known && cached) {
-      const c = Array.isArray(cached) ? cached : cached.ring;
-      if (c && c.length >= 3) {
-        known = c; ringSrc = "traced";
-        if (!Array.isArray(cached) && cached.holes) known.holes = cached.holes;
-      }
-    }
-
-    if (known) {
-      // "astat" is the registry's own polygon relayed by map.astat.am (it
-      // contains the cadastre's vertex to within 0.27 m), so it is drawn solid
-      // like "cadastre" -- and credited in the popup.
-      const fromCadastre = ringSrc === "cadastre" || ringSrc === "astat";
-      const inferred = !fromCadastre && knownInferred;
-      const area = db.area ?? a.area;
-      const popup = auctionPopup(a, { area, inferred, via: ringSrc === "astat" });
-      layer = parcelPolygon(known, known.holes, { color: AUCTION_COLOR, weight: 3,
-                                 fillColor: AUCTION_COLOR, fillOpacity: opacityVal(),
-                                 dashArray: dashFor(!fromCadastre, inferred) });
-      layer.bindPopup(popup, popupOpts());
-      layer.addTo(auctionLayer);
-      // The centre comes from the ring itself, so a stored outline needs no
-      // lookup to be pinned — and never inherits the lot's stored vertex,
-      // which is a corner and often across the street from the parcel.
-      const centre = parcelCentre(known);
-      popupAtCentre(layer, centre);
-      drawn.set(a.code, { layer, coords: known, area, isPoly: true, centre,
-                          pin: addRefPoint(centre, AUCTION_COLOR, popup) });
-      renderMeasurements();
-      aStatus("");
-    } else {
-      aStatus(t("aLoading"));
-      try {
-        // The POINT is already in the database — `lat`/`lng`, geocoded by the
-        // crawler from this very code — and so is `area`. Asking /parcel for
-        // them again was a cadastre round-trip for data we were holding, and
-        // it is why a click answered "no geometry" whenever the upstream was
-        // slow or down.
-        //
-        // But a stored POINT is not a stored OUTLINE. Since 2026-10-01 /parcel
-        // can return a real ring (via map.astat.am, cached a week at the edge),
-        // and the codes tab drew 07-002-0036-0741 as a polygon while this tab,
-        // holding only its pin, drew a dot. So a lot with no stored ring still
-        // asks /parcel -- and with a pin in hand a failed ask is not an error:
-        // it falls through to the pin exactly as before.
-        let vertex = (db.lat != null && db.lng != null) ? [db.lat, db.lng]
-                   : (a.lat  != null && a.lng  != null) ? [a.lat, a.lng] : null;
-        let area = db.area ?? a.area, exact;
-        {
-          let res = null;
-          try {
-            // With a pin in hand the outline is a bonus, so it gets 4s, not the
-            // Worker's 8s cadastre timeout. An abandoned ask still completes at
-            // the edge and is cached there, so the next click has it at once.
-            res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code),
-                              vertex ? { signal: AbortSignal.timeout(4000) } : {})
-              .then(r => r.json());
-          } catch { res = null; }
-          const got = !!(res && res.success && res.coords && res.coords.length);
-          if (!got && !vertex) {
-            if (res && /session was refused|anonymous access is closed|CADASTRE_COOKIE|cadastre refused|map\.astat\.am/i.test(String(res.error || "")))
-              { aStatus(t("cadastreRefused")); return; }
-            throw new Error("no geometry");
-          }
-          if (got && !vertex) vertex = res.coords[0];
-          if (got && res.coords.length >= 3) {   // a real ring: cadastre's or astat's
-            const popup = auctionPopup(a, { ...res, area: res.area ?? area });
-            const holes = Array.isArray(res.holes) ? res.holes : null;
-            layer = parcelPolygon(res.coords, holes, { color: AUCTION_COLOR, weight: 3,
-                                            fillColor: AUCTION_COLOR, fillOpacity: opacityVal() });
-            layer.bindPopup(popup, popupOpts());
-            layer.addTo(auctionLayer);
-            const centre = parcelCentre(res.coords);
-            popupAtCentre(layer, centre);
-            drawn.set(a.code, { layer, coords: res.coords, holes, area: res.area ?? area,
-                                isPoly: true, centre,
-                                pin: addRefPoint(centre, AUCTION_COLOR, popup) });
-            renderMeasurements();
-            rememberRing(a.code, res.coords);
-            aStatus("");
-            return await finish(layer);
-          }
-          if (got) { area = res.area ?? area; exact = res.exact; }
-        }
-
-        let coords = [vertex], traced = false, inferred = false, whyNoRing = null;
-        if (document.getElementById("do-trace").checked) {
-          const tr = await traceBoundary(vertex[0], vertex[1], area || 1000, a.code);
-          if (tr && tr.length >= 3) { coords = tr; traced = true; inferred = !!tr.inferred; }
-          // traceBoundary already knows why it gave up — it records the reason in
-          // __traceLog.result and prints it to the console. Throwing that away
-          // here is what made the same parcel look "fine from the codes tab and
-          // broken from the auctions list": both paths trace, both can refuse,
-          // and only one of them said so. plotAll() has carried a `reason` per
-          // parcel all along; this is the same courtesy.
-          else whyNoRing = (window.__trace && window.__trace.result) || "no ring";
-        } else {
-          whyNoRing = t("aTraceOff");
-        }
-        const isPoly = coords.length >= 3;
-        const popup = auctionPopup(a, { area, exact, inferred });
-        layer = isPoly
-          ? parcelPolygon(coords, coords.holes, { color: AUCTION_COLOR, weight: 3,
-                                fillColor: AUCTION_COLOR,
-                                fillOpacity: opacityVal(), dashArray: dashFor(traced, inferred) })
-          : L.marker(vertex, { icon: pinIcon(AUCTION_COLOR) });
-        layer.bindPopup(popup, popupOpts());
-        layer.addTo(auctionLayer);
-        const centre = isPoly ? parcelCentre(coords) : vertex;
-        if (isPoly) popupAtCentre(layer, centre);
-        drawn.set(a.code, { layer, coords, area, isPoly, centre,
-                            pin: isPoly ? addRefPoint(centre, AUCTION_COLOR, popup) : null });
-        renderMeasurements();
-        if (isPoly) {                                // next click is instant
-          if (inferred) coords.inferred = true;
-          rememberRing(a.code, coords);
-        }
-        // A pin where an outline was expected is not an error, but it is never
-        // self-explanatory: the point is the registry's own VERTEX, which is a
-        // corner and routinely sits against a neighbouring parcel's label. Say
-        // which of the two happened.
-        aStatus(isPoly ? "" : t("aNoOutline") + whyNoRing);
-        // ...and then go and get the outline anyway, without making the click
-        // wait for it. See upgradeToOutline().
-        if (!isPoly) upgradeToOutline(a, layer, area);
-      } catch (e) { aStatus(t("aNoGeom")); return; }
-    }
+    try { layer = await drawAuction(a); }
+    catch (e) { console.warn("focusAuction", a.code, e); aStatus(t("aNoGeom")); return; }
+    if (!layer) return;
   }
-
   return finish(layer);
 }
 
-// Frame whatever was drawn and open its popup. Split out of focusAuction so the
-// one branch that can finish early — the cadastre handing back a real polygon —
-// ends the same way as every other, instead of duplicating the phone handling.
+/**
+ * Draw one lot, cheapest source first:
+ *   1. an outline stored with the lot (/parcels, or a.ring / a.geom)
+ *   2. this browser's cache of earlier outlines
+ *   3. /parcel -- a real ring from the registry or astat
+ *   4. a trace from the cadastre raster, starting at the stored vertex
+ * A stored POINT is enough to answer the click; when it is all we get, the
+ * outline is fetched afterwards in the background (upgradeToOutline).
+ */
+async function drawAuction(a) {
+  await storedInFlight;                     // whatever the list prefetched
+  const db = stored.get(a.code) || {};
+  const cached = ringCache[a.code];
+  const cachedRec = cached && !Array.isArray(cached) ? cached : null;
 
-// Codes tab: 10-001-0359-0047 draws an outline. Auctions list: the same parcel
-// stops at a pin. Both paths trace, so the difference is where they start from.
-//
-//   plotAll()       traces from res.coords[0] -- the registry's CURRENT vertex,
-//                   fetched a moment ago, with the area from the same reply.
-//   focusAuction()  traces from the STORED vertex, to avoid a cadastre
-//                   round-trip for a point we are already holding. That is the
-//                   right default and it is usually the same point -- but the
-//                   registry moves them. Four lots drifted 4-20 m on
-//                   2026-09-01 with their areas unchanged. A trace that starts
-//                   on a corner the parcel no longer has finds nothing, and the
-//                   click ends on a pin while the codes tab shows the shape.
-//
-// So: keep the fast path exactly as it is, and when it lands on a pin, try
-// again in the background from a fresh lookup. The click stays instant, the
-// outline arrives when it arrives, and a failure leaves the pin that is
-// already there.
+  let coords = null, holes = null, src = null;
+  if (a.ring && a.ring.length >= 3) { coords = a.ring; src = a.geomSrc; }
+  else if (a.geom) {
+    try { const g = JSON.parse(a.geom); if (g && g.length >= 3) { coords = g; src = a.geomSrc; } }
+    catch { /* a malformed ring is no ring */ }
+  }
+  if (!coords && db.ring && db.ring.length >= 3) { coords = db.ring; src = db.src; }
+  if (!coords && cached) {
+    const c = cachedRec ? cachedRec.ring : cached;
+    if (c && c.length >= 3) {
+      coords = c; holes = (cachedRec && cachedRec.holes) || null;
+      src = cachedRec && cachedRec.via ? "astat" : "traced";
+    }
+  }
+
+  let vertex = (db.lat != null && db.lng != null) ? [db.lat, db.lng]
+             : (a.lat  != null && a.lng  != null) ? [a.lat, a.lng] : null;
+  let area = db.area ?? a.area, exact, inferred = false, whyNoRing = null;
+
+  if (!coords) {
+    aStatus(t("aLoading"));
+    // With a pin in hand the outline is a bonus, so it gets 4s, not the
+    // Worker's 8s cadastre timeout.
+    const got = await fetchPolygon(a.code, vertex ? { timeoutMs: 4000 } : {});
+    const res = got.ok ? got.data : null;
+    if (!res && !vertex) {
+      aStatus(t(got.reason === "refused" ? "cadastreRefused" : "aNoGeom"));
+      return null;
+    }
+    if (res) {
+      area = res.area ?? area; exact = res.exact;
+      if (!vertex) vertex = res.coords[0];
+      if (res.coords.length >= 3) {
+        coords = res.coords; holes = Array.isArray(res.holes) ? res.holes : null;
+        src = res.via ? "astat" : "cadastre";
+        rememberRing(a.code, coords, !!res.via);
+      }
+    }
+    if (!coords) {
+      const tr = await traceOutline(vertex, area, a.code);
+      if (tr.ring) {
+        coords = tr.ring; holes = tr.ring.holes || null; src = "traced"; inferred = tr.inferred;
+        if (inferred) coords.inferred = true;
+        rememberRing(a.code, coords);
+      } else whyNoRing = tr.why;
+    }
+  } else if (src !== "cadastre" && src !== "astat") {
+    inferred = !!(cachedRec && cachedRec.inferred);
+  }
+
+  const traced = !!coords && src !== "cadastre" && src !== "astat";
+  const popup = auctionPopup(a, { area, exact, inferred, via: src === "astat" });
+  const d = drawParcel({ coords: coords || [vertex], holes, vertex, color: AUCTION_COLOR,
+                         weight: 3, dash: dashFor(traced, inferred), popup, group: auctionLayer });
+  drawn.set(a.code, { ...d, coords: coords || [vertex], holes, area });
+  renderMeasurements();
+  // A pin where an outline was expected is not an error, but it is never
+  // self-explanatory: say which of the two happened, then go and get the
+  // outline anyway without making the click wait for it.
+  aStatus(d.isPoly ? "" : t("aNoOutline") + whyNoRing);
+  if (!d.isPoly) upgradeToOutline(a, d.layer, area);
+  return d.layer;
+}
+
 // Codes we have a definitive answer for: either an outline arrived, or the
 // tracer ran and refused. A bail because the cadastre was unreachable does NOT
-// belong here -- that is a fact about this minute, not about the parcel, and
-// marking it would mean the lot never gets its outline in this tab again.
+// belong here -- that is a fact about this minute, not about the parcel.
 const upgradeTried = new Set();
 
+/**
+ * A lot drawn as a pin, retried in the background from a FRESH lookup: the
+ * registry moves vertices (four lots drifted 4-20 m on 2026-09-01), and a
+ * trace started from a stale stored corner finds nothing.
+ */
 async function upgradeToOutline(a, marker, area) {
   if (upgradeTried.has(a.code)) return;
   upgradeTried.add(a.code);
   const retryLater = () => { upgradeTried.delete(a.code); };
   if (!document.getElementById("do-trace").checked) { retryLater(); return; }
 
-  let coords = null, inferred = false, fresh = null;
+  let coords = null, holes = null, inferred = false, fresh = null;
   try {
-    const got = await fetchPolygon(a.code);            // the codes tab's own fetch
+    const got = await fetchPolygon(a.code);
     if (got.ok) {
       fresh = got.data;
-      if (fresh.coords && fresh.coords.length >= 3) coords = fresh.coords;
+      if (fresh.coords && fresh.coords.length >= 3) {
+        coords = fresh.coords; holes = Array.isArray(fresh.holes) ? fresh.holes : null;
+      }
     }
     if (!coords) {
       const v = fresh && fresh.coords && fresh.coords.length ? fresh.coords[0] : null;
       if (!v) { retryLater(); return; }                // upstream down: keep the pin
-      const tr = await traceBoundary(v[0], v[1], (fresh && fresh.area) || area || 1000, a.code);
-      if (!tr || tr.length < 3) return;                // it looked and found nothing
-      coords = tr; inferred = !!tr.inferred;
+      const tr = await traceOutline(v, (fresh && fresh.area) || area, a.code);
+      if (!tr.ring) return;                            // it looked and found nothing
+      coords = tr.ring; holes = tr.ring.holes || null; inferred = tr.inferred;
     }
   } catch { retryLater(); return; }                     // never let this throw at the user
 
-  // Nothing below may assume the map still looks the way it did. The lookup
-  // takes seconds, and in that time the user can clear, click another lot, or
-  // click this one again. Swap in only if OUR marker is still the thing on
-  // screen for this code.
+  // The lookup takes seconds; swap in only if OUR marker is still the thing
+  // on screen for this code.
   const held = drawn.get(a.code);
   if (!held || held.layer !== marker || !auctionLayer.hasLayer(marker)) return;
 
+  const fromRegistry = !!(fresh && fresh.coords && fresh.coords.length >= 3);
   const areaNow = (fresh && fresh.area) || area;
-  const popup = auctionPopup(a, { area: areaNow, exact: fresh && fresh.exact, inferred });
-  const holes = (fresh && Array.isArray(fresh.holes)) ? fresh.holes : null;
-  const layer = parcelPolygon(coords, holes, { color: AUCTION_COLOR, weight: 3, fillColor: AUCTION_COLOR,
-                                    fillOpacity: opacityVal(),
-                                    dashArray: dashFor(!(fresh && fresh.coords && fresh.coords.length >= 3), inferred) });
-  layer.bindPopup(popup, popupOpts());
-  layer.addTo(auctionLayer);
+  const popup = auctionPopup(a, { area: areaNow, exact: fresh && fresh.exact, inferred,
+                                  via: fromRegistry && !!fresh.via });
   auctionLayer.removeLayer(marker);
-  if (held.pin) auctionLayer.removeLayer(held.pin);
-
-  const centre = parcelCentre(coords);
-  popupAtCentre(layer, centre);
-  drawn.set(a.code, { layer, coords, holes, area: areaNow, isPoly: true, centre,
-                      pin: addRefPoint(centre, AUCTION_COLOR, popup) });
+  const d = drawParcel({ coords, holes, color: AUCTION_COLOR, weight: 3,
+                         dash: dashFor(!fromRegistry, inferred), popup, group: auctionLayer });
+  drawn.set(a.code, { ...d, coords, holes, area: areaNow });
   if (inferred) coords.inferred = true;
-  rememberRing(a.code, coords);                 // the next click is instant
+  rememberRing(a.code, coords, fromRegistry && !!fresh.via);
   renderMeasurements();
-  // Only clear OUR message. By now the user may have clicked a different lot,
-  // and its status line is not ours to wipe.
+  // Only clear OUR message; the user may have clicked another lot by now.
   if (String(aStatusText()).startsWith(t("aNoOutline"))) aStatus("");
 }
 
 async function finish(layer) {
-  const b = layer.getBounds ? layer.getBounds() : L.latLngBounds([layer.getLatLng(), layer.getLatLng()]).pad(0.002);
+  const b = boundsOf(layer);
 
   if (isPhone()) {
     // Half, not peek: the map is visible and the list is still there to pick
@@ -2630,17 +2586,18 @@ async function finish(layer) {
 
 function auctionPopup(a, parcel) {
   const row = (k, v) => v == null || v === "" ? "" : `<tr><td>${k}</td><td>${v}</td></tr>`;
-  const d = daysLeft(a.endsAt);
-  return `<b>${a.title || ""}</b>
+  // endsAtOf, like the card: a deadline before the start is not believed.
+  const ends = endsAtOf(a), d = daysLeft(ends);
+  return `<b>${esc(a.title)}</b>
     <table style="margin-top:4px">
-      ${row(t("aCode"), `<span style="font-family:ui-monospace,Menlo,Consolas,monospace">${a.code}</span>`)}
+      ${row(t("aCode"), `<span style="font-family:ui-monospace,Menlo,Consolas,monospace">${esc(a.code)}</span>`)}
       ${a.priceSold != null ? row(t("aSold"), fmtPrice(a.priceSold)) : ""}
       ${row(t("aPriceStart"), fmtPrice(a.priceStart))}
       ${row(t("aValuation"), fmtPrice(a.valuation))}
       ${row(t("aDeposit"), fmtPrice(a.deposit))}
-      ${row(t("aOrganizer"), org(a.organizer))}
-      ${row(t("aStarts"), a.startsAt)}
-      ${row(t("aEnds"), a.endsAt ? a.endsAt + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : "") : null)}
+      ${row(t("aOrganizer"), esc(org(a.organizer)))}
+      ${row(t("aStarts"), esc(a.startsAt))}
+      ${row(t("aEnds"), ends ? esc(ends) + (d != null ? ` (${d <= 0 ? t("aEndsSoon") : d + " " + t("daysShort")})` : "") : null)}
       ${row(t("popupArea"), parcel && parcel.area ? fmtArea(parcel.area) : null)}
     </table>` +
     (parcel && parcel.exact === false
@@ -2649,7 +2606,7 @@ function auctionPopup(a, parcel) {
       ? `<div style="margin-top:4px"><b style="color:#b45309">${t("inferred")}</b></div>` : "") +
     (parcel && parcel.via
       ? `<div style="margin-top:4px;color:#666">${t("viaAstat")}</div>` : "") +
-    `<a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
+    `<a href="${safeUrl(a.url)}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
 /**
@@ -2752,7 +2709,9 @@ window.addEventListener("message", (e) => {
   if (e.data === "ecadaster:close-stats") closeStats();
 });
 document.getElementById("a-region").addEventListener("change", syncStatsLink);
-document.getElementById("statsClose").onclick = closeStats;
+// Not `onclick = closeStats`: the click event would arrive as `fromHistory`,
+// which is truthy, so the history entry openStats pushed was never consumed.
+document.getElementById("statsClose").onclick = () => closeStats();
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !document.getElementById("statsWrap").hidden) closeStats();
 });
@@ -2838,6 +2797,7 @@ async function boot() {
     (document.querySelector('meta[name="build"]')?.content || "unknown"));
   try { LANG = new URLSearchParams(location.search).get("lang") || localStorage.getItem("lang") || "hy"; }
   catch (e) { LANG = "hy"; }
+  if (!I18N[LANG]) LANG = "hy";
   applyI18n();
   document.getElementById("lang").onchange = (e) => {
     LANG = e.target.value; try { localStorage.setItem("lang", LANG); } catch (x) {} applyI18n(); commit();
