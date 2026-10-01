@@ -391,7 +391,7 @@ const I18N = {
     plotting:n=>`Գծվում է ${n} ծածկագիր…`, plotted:(a,b)=>`Գծվեց ${a} / ${b}։`,
     corsMsg:"Որոշ հարցումներ արգելափակվեցին CORS-ով — տես console։",
     shareCopied:"Հղումը պատճենվեց ✓", sharePrompt:"Պատճենեք այս հղումը՝",
-    rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։", cadastreMapOff:"Կադաստրի քարտեզը հիմա հասանելի չէ՝ դրա շերտերն անջատված են։",
+    rasterWarn:"Կադաստրի շերտերը երևում են մոտեցնելուց հետո (zoom 14+)։", cadastreMapOff:"Կադաստրի քարտեզը հիմա հասանելի չէ՝ դրա շերտերն անջատված են։", aClipped:"Ցուցակը կտրված է՝ ոչ բոլոր լոտերն են քարտեզին։",
     inferred:"⚠ եզրագիծը ենթադրված է. կադաստրի կետը անկյուն է, և այս հողամասն է միակը, որ դիպչում է կետին և համապատասխանում է մակերեսին",
     upstreamDown:"կադաստրը չի պատասխանում — ծածկագիրը սխալ չէ, կրկին փորձեք",
     ambiguousCode:"կադաստրը մի քանի հողամաս վերադարձրեց — ճշգրիտ համընկնում չկա",
@@ -437,7 +437,7 @@ const I18N = {
     plotting:n=>`Plotting ${n} code(s)…`, plotted:(a,b)=>`Plotted ${a} of ${b}.`,
     corsMsg:"Some requests blocked by browser CORS — see console.",
     shareCopied:"Share link copied ✓", sharePrompt:"Copy this share link:",
-    rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).", cadastreMapOff:"The cadastre map is unavailable right now, so its layers are turned off.",
+    rasterWarn:"Cadastre layers appear once you zoom in (zoom 14+).", cadastreMapOff:"The cadastre map is unavailable right now, so its layers are turned off.", aClipped:"The list was cut short: not every lot is on the map.",
     inferred:"⚠ boundary inferred: the cadastre point is a corner, and this was the only parcel touching it that also matches the registered area",
     upstreamDown:"the cadastre is not answering — the code is not wrong, try again",
     ambiguousCode:"the cadastre returned no exact match for this code",
@@ -483,7 +483,7 @@ const I18N = {
     plotting:n=>`Показываю ${n} код(ов)…`, plotted:(a,b)=>`Показано ${a} из ${b}.`,
     corsMsg:"Некоторые запросы заблокированы CORS — см. консоль.",
     shareCopied:"Ссылка скопирована ✓", sharePrompt:"Скопируйте эту ссылку:",
-    rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).", cadastreMapOff:"Карта кадастра сейчас недоступна — её слои отключены.",
+    rasterWarn:"Слои кадастра появляются при приближении (zoom 14+).", cadastreMapOff:"Карта кадастра сейчас недоступна — её слои отключены.", aClipped:"Список обрезан: на карте не все лоты.",
     inferred:"⚠ граница выведена косвенно: точка кадастра — угол, и это единственный участок, который её касается и совпадает по площади",
     upstreamDown:"кадастр не отвечает — код верен, попробуйте ещё раз",
     ambiguousCode:"кадастр не вернул точного совпадения по этому коду",
@@ -1996,10 +1996,14 @@ async function loadAuctions(force) {
     // `source=all` explicitly. The Worker's default is e-auctions -- kept that
     // way so every caller written before the second site still sees what it
     // saw -- so asking for everything has to be said out loud.
-    const r = await fetch(API + "/auctions?open=0&source=all");
+    // limit=5000, the Worker's ceiling. Its default is 2000 and the table held
+    // 1470 on 2026-10-01 -- weeks from clipping, and a clipped list drops the
+    // NEWEST lots with no error (the LIMIT 500 incident). X-Truncated is the
+    // part that lasts: if even 5000 is not enough, say so on screen.
+    const r = await fetch(API + "/auctions?open=0&source=all&limit=5000");
     if (!r.ok) throw new Error(String(r.status));
     AUCTIONS = await r.json();
-    aStatus("");
+    aStatus(r.headers.get("X-Truncated") === "1" ? t("aClipped") : "");
   } catch (e) {
     AUCTIONS = [];
     aStatus(t("aSoon"));                              // endpoint not deployed yet
