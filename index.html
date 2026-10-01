@@ -2,7 +2,7 @@
 <html lang="hy">
 <head>
 <meta charset="utf-8">
-<meta name="build" content="2026-10-01-review1">
+<meta name="build" content="2026-10-01-upgrade">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Armenia cadastre map</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMGYxNzJhIi8+CjxwYXRoIGQ9Ik0zMiAxMmMtOCAwLTE0IDYtMTQgMTQgMCAxMCAxNCAyNiAxNCAyNnMxNC0xNiAxNC0yNmMwLTgtNi0xNC0xNC0xNHoiIGZpbGw9IiMzOGJkZjgiLz4KPGNpcmNsZSBjeD0iMzIiIGN5PSIyNiIgcj0iNiIgZmlsbD0iIzBmMTcyYSIvPgo8L3N2Zz4=">
@@ -2526,8 +2526,13 @@ async function upgradeToOutline(a, marker, area) {
   if (upgradeTried.has(a.code)) return;
   upgradeTried.add(a.code);
   const retryLater = () => { upgradeTried.delete(a.code); };
-  if (!document.getElementById("do-trace").checked) { retryLater(); return; }
 
+  // No tracing check here. The lookup is the part that matters while the
+  // cadastre is down: /parcel then answers from map.astat.am, but only after
+  // the cadastre's 8s timeout -- longer than the click's 4s budget -- so this
+  // background ask is the ONLY path that gets that polygon. It used to bail
+  // when "trace boundary" was unticked, and cadastreMapOff() unticks it, so
+  // the fallback never ran exactly when it was needed (lot 4314).
   let coords = null, holes = null, inferred = false, fresh = null;
   try {
     const got = await fetchPolygon(a.code);
@@ -2540,6 +2545,7 @@ async function upgradeToOutline(a, marker, area) {
     if (!coords) {
       const v = fresh && fresh.coords && fresh.coords.length ? fresh.coords[0] : null;
       if (!v) { retryLater(); return; }                // upstream down: keep the pin
+      if (!document.getElementById("do-trace").checked) { retryLater(); return; }
       const tr = await traceOutline(v, (fresh && fresh.area) || area, a.code);
       if (!tr.ring) return;                            // it looked and found nothing
       coords = tr.ring; holes = tr.ring.holes || null; inferred = tr.inferred;
