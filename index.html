@@ -395,7 +395,7 @@ const I18N = {
     inferred:"⚠ եզրագիծը ենթադրված է. կադաստրի կետը անկյուն է, և այս հողամասն է միակը, որ դիպչում է կետին և համապատասխանում է մակերեսին",
     upstreamDown:"կադաստրը չի պատասխանում — ծածկագիրը սխալ չէ, կրկին փորձեք",
     ambiguousCode:"կադաստրը մի քանի հողամաս վերադարձրեց — ճշգրիտ համընկնում չկա",
-    notFound:"չի գտնվել", cadastreRefused:"կադաստրը մերժում է հարցումը (403) — ծածկագիրը կարող է ճիշտ լինել", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
+    notFound:"չի գտնվել", cadastreRefused:"կադաստրը մերժում է հարցումը (403) — ծածկագիրը կարող է ճիշտ լինել", viaAstat:"եզրագիծը՝ map.astat.am-ից", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
     unconfirmed:"⚠ Տեղը հաստատված չէ. կադաստրի որոնումը վերադարձրեց տող, որը այս ծածկագիրը չի պարունակում։",
   },
   en: {
@@ -441,7 +441,7 @@ const I18N = {
     inferred:"⚠ boundary inferred: the cadastre point is a corner, and this was the only parcel touching it that also matches the registered area",
     upstreamDown:"the cadastre is not answering — the code is not wrong, try again",
     ambiguousCode:"the cadastre returned no exact match for this code",
-    notFound:"not found", cadastreRefused:"the cadastre is refusing our access (403) — the code may well be valid", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
+    notFound:"not found", cadastreRefused:"the cadastre is refusing our access (403) — the code may well be valid", viaAstat:"outline via map.astat.am", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
     unconfirmed:"⚠ Location unconfirmed: the cadastre search returned a row that does not carry this code.",
   },
   ru: {
@@ -487,7 +487,7 @@ const I18N = {
     inferred:"⚠ граница выведена косвенно: точка кадастра — угол, и это единственный участок, который её касается и совпадает по площади",
     upstreamDown:"кадастр не отвечает — код верен, попробуйте ещё раз",
     ambiguousCode:"кадастр не вернул точного совпадения по этому коду",
-    notFound:"не найдено", cadastreRefused:"кадастр отказывает в доступе (403) — код может быть верным", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
+    notFound:"не найдено", cadastreRefused:"кадастр отказывает в доступе (403) — код может быть верным", viaAstat:"контур с map.astat.am", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
     unconfirmed:"⚠ Местоположение не подтверждено: поиск кадастра вернул запись без этого кода.",
   },
 };
@@ -994,7 +994,7 @@ async function fetchPolygon(code) {
   // the 5xx test because the Worker wraps this in a 502, and before "missing"
   // because reporting a real parcel as nonexistent is the one wrong answer
   // a user will act on.
-  if (/session was refused|anonymous access is closed|CADASTRE_COOKIE/i.test(err))
+  if (/session was refused|anonymous access is closed|CADASTRE_COOKIE|cadastre refused|map\.astat\.am/i.test(err))
     return { ok: false, reason: "refused" };
   // "timeout", "unavailable", "unreachable", "down" — anything that is about
   // the upstream rather than about this code.
@@ -1047,7 +1047,8 @@ function popupHtml(p) {
     // exact === false means the worker matched a row that does not carry this
     // code. It is not refused (see pickRow) but it must not look like a fact.
     (p.exact === false ? `<br><b style="color:#b45309">${t("unconfirmed")}</b>` : "") +
-    (p.updated ? `<br><span style="color:#666">${p.updated}</span>` : "");
+    (p.updated ? `<br><span style="color:#666">${p.updated}</span>` : "") +
+    (p.via ? `<br><span style="color:#666">${t("viaAstat")}</span>` : "");
 }
 
 function renderMeasurements() {
@@ -1158,7 +1159,7 @@ async function plotAll(skipFit = false) {
       const centre = isPoly ? parcelCentre(coords) : vertex;
       const p = { code, coords, holes, layer, ok:true, color, isPoly, traced, inferred, centre, exact: res.exact,
                   area: (typeof res.area === "number" && res.area > 0) ? res.area : (isPoly ? areaM2(coords) : 0),
-                  perim: isPoly ? perimeter(coords) : 0, updated: res.updated };
+                  perim: isPoly ? perimeter(coords) : 0, updated: res.updated, via: res.via };
       layer.bindPopup(popupHtml(p), popupOpts());
       // Outline AND pin, not one or the other — and the pin sits at the
       // outline's centre. Only when there is an outline: without one the
@@ -2363,10 +2364,13 @@ async function focusAuction(a) {
     }
 
     if (known) {
-      const fromCadastre = ringSrc === "cadastre";
+      // "astat" is the registry's own polygon relayed by map.astat.am (it
+      // contains the cadastre's vertex to within 0.27 m), so it is drawn solid
+      // like "cadastre" -- and credited in the popup.
+      const fromCadastre = ringSrc === "cadastre" || ringSrc === "astat";
       const inferred = !fromCadastre && knownInferred;
       const area = db.area ?? a.area;
-      const popup = auctionPopup(a, { area, inferred });
+      const popup = auctionPopup(a, { area, inferred, via: ringSrc === "astat" });
       layer = parcelPolygon(known, known.holes, { color: AUCTION_COLOR, weight: 3,
                                  fillColor: AUCTION_COLOR, fillOpacity: opacityVal(),
                                  dashArray: dashFor(!fromCadastre, inferred) });
@@ -2397,7 +2401,7 @@ async function focusAuction(a) {
           const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code))
             .then(r => r.json());
           if (!res.success || !res.coords || !res.coords.length) {
-            if (/session was refused|anonymous access is closed|CADASTRE_COOKIE/i.test(String(res.error || "")))
+            if (/session was refused|anonymous access is closed|CADASTRE_COOKIE|cadastre refused|map\.astat\.am/i.test(String(res.error || "")))
               { aStatus(t("cadastreRefused")); return; }
             throw new Error("no geometry");
           }
@@ -2585,6 +2589,8 @@ function auctionPopup(a, parcel) {
       ? `<div style="margin-top:4px"><b style="color:#b45309">${t("unconfirmed")}</b></div>` : "") +
     (parcel && parcel.inferred
       ? `<div style="margin-top:4px"><b style="color:#b45309">${t("inferred")}</b></div>` : "") +
+    (parcel && parcel.via
+      ? `<div style="margin-top:4px;color:#666">${t("viaAstat")}</div>` : "") +
     `<a href="${a.url}" target="_blank" rel="noopener">${t("aOpenLot")} ↗</a>`;
 }
 
