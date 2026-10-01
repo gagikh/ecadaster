@@ -143,10 +143,10 @@ function matchRegion(lot, value) {
   const hay = up(`${lot.organizer || ""} ${lot.community || ""} `
                  + `${lot.address || ""} ${lot.title || ""}`);
   const code = String(lot.code || lot.cadastre_code || "");
-  // `marz` is stored as a small integer (the code's first two digits); fall
-  // back to the code itself for rows served without it.
-  const marzNo = lot.marz != null ? String(lot.marz).padStart(2, "0")
-               : code ? code.slice(0, 2) : "";
+  // The region's number: the cadastral code's first two digits, or -- for a
+  // lot with no code -- the marz its text names ("Գեղարքունիքի մարզ, ք. Սևան").
+  const textMarz = code ? null : Object.keys(MARZ_CODE).find(m => hay.includes(up(m)));
+  const marzNo = code ? code.slice(0, 2) : (textMarz ? MARZ_CODE[textMarz] : "");
 
   if (value.startsWith("marz:")) {
     const marz = value.slice(5);
@@ -174,10 +174,8 @@ function matchRegion(lot, value) {
   // contains ԱՆԻ; selecting Տեղ (Syunik) listed anything whose address said
   // տեղամաս.
   //
-  // `marzNo` was already computed at the top of this function from `lot.marz`
-  // OR the code, and code-less ajurd rows DO carry marz — rescan.py fills it
-  // from the code's first pair. So the guard has something to work with in
-  // exactly the case it used to give up on, and only a row with neither a
-  // code nor a marz falls through now.
+  // `marzNo` comes from the code, or for a code-less lot from the marz its
+  // own text names, so the guard has something to work with in exactly the
+  // case it used to give up on. Only a lot naming no marz at all falls through.
   return !marzNo || !digits || marzNo === digits;
 }

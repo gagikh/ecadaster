@@ -267,7 +267,7 @@ function selected() {
   const src = document.getElementById("source").value;
   const openOnly = document.getElementById("openOnly").checked;
   let rows = LOTS;
-  // stored dates are Yerevan wall-clock with no zone marker — see time.mjs
+  // stored dates are Yerevan wall-clock (UTC+4) with no zone marker
   if (openOnly) rows = rows.filter(a => {
     if (!a.endsAt) return true;
     const s = String(a.endsAt).trim().replace(" ", "T");

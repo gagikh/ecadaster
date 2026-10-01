@@ -4,6 +4,7 @@ __pycache__/
 node_modules/
 # Worker + parser stay local (deployed with wrangler, never pushed)
 worker/
+local/
 # Live credentials. .env holds a JSESSIONID from a logged-in e-cadastre
 # session, which authenticates as that person to a state registry - it is a
 # password, not configuration. Checked 2026-08-26: never tracked, no commit
@@ -12,3 +13,11 @@ worker/
 .env.*
 py/.cadastre-cookie
 *.cadastre-cookie
+
+# Local admin page for the D1 database: never pushed (see local/admin/admin.py)
+local/admin/
+
+# Holds a Cloudflare API token in plain text -- never commit it.
+update.session.sh
+# Caches and local logs
+.wrangler/
