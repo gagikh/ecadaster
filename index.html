@@ -395,7 +395,7 @@ const I18N = {
     inferred:"⚠ եզրագիծը ենթադրված է. կադաստրի կետը անկյուն է, և այս հողամասն է միակը, որ դիպչում է կետին և համապատասխանում է մակերեսին",
     upstreamDown:"կադաստրը չի պատասխանում — ծածկագիրը սխալ չէ, կրկին փորձեք",
     ambiguousCode:"կադաստրը մի քանի հողամաս վերադարձրեց — ճշգրիտ համընկնում չկա",
-    notFound:"չի գտնվել", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
+    notFound:"չի գտնվել", cadastreRefused:"կադաստրը մերժում է հարցումը (403) — ծածկագիրը կարող է ճիշտ լինել", pointOnly:"միայն հենակետ՝ հողամասի ԱՆԿՅՈՒՆԸ, ոչ թե կենտրոնը (կադաստրը սահմանները չի տրամադրում)", traced:"եզրագիծը վերծանված է կադաստրի քարտեզից", popupArea:"Մակերես", popupPerim:"Պարագիծ", popupVerts:"Գագաթներ", youAreHere:"Դուք այստեղ եք",
     unconfirmed:"⚠ Տեղը հաստատված չէ. կադաստրի որոնումը վերադարձրեց տող, որը այս ծածկագիրը չի պարունակում։",
   },
   en: {
@@ -441,7 +441,7 @@ const I18N = {
     inferred:"⚠ boundary inferred: the cadastre point is a corner, and this was the only parcel touching it that also matches the registered area",
     upstreamDown:"the cadastre is not answering — the code is not wrong, try again",
     ambiguousCode:"the cadastre returned no exact match for this code",
-    notFound:"not found", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
+    notFound:"not found", cadastreRefused:"the cadastre is refusing our access (403) — the code may well be valid", pointOnly:"reference point only — a CORNER of the parcel, not its centre (the cadastre no longer serves boundaries)", traced:"boundary traced from the cadastre map", popupArea:"Area", popupPerim:"Perimeter", popupVerts:"Vertices", youAreHere:"You are here",
     unconfirmed:"⚠ Location unconfirmed: the cadastre search returned a row that does not carry this code.",
   },
   ru: {
@@ -487,7 +487,7 @@ const I18N = {
     inferred:"⚠ граница выведена косвенно: точка кадастра — угол, и это единственный участок, который её касается и совпадает по площади",
     upstreamDown:"кадастр не отвечает — код верен, попробуйте ещё раз",
     ambiguousCode:"кадастр не вернул точного совпадения по этому коду",
-    notFound:"не найдено", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
+    notFound:"не найдено", cadastreRefused:"кадастр отказывает в доступе (403) — код может быть верным", pointOnly:"только опорная точка — УГОЛ участка, а не его центр (кадастр не отдаёт границы)", traced:"граница обведена по карте кадастра", popupArea:"Площадь", popupPerim:"Периметр", popupVerts:"Вершины", youAreHere:"Вы здесь",
     unconfirmed:"⚠ Местоположение не подтверждено: поиск кадастра вернул запись без этого кода.",
   },
 };
@@ -975,7 +975,8 @@ function syncPointGroup() {
  *
  * Returns { ok:true, data } or { ok:false, reason } where reason is one of
  * "down" (upstream did not answer), "ambiguous" (the worker refused to guess
- * between parcels), or "missing" (the cadastre genuinely has no such code).
+ * between parcels), "refused" (the cadastre answered 403 to our session), or
+ * "missing" (the cadastre genuinely has no such code).
  */
 async function fetchPolygon(code) {
   let d;
@@ -989,6 +990,12 @@ async function fetchPolygon(code) {
   const err = String(d.error || "");
   if (d.ambiguous || /ambiguous|different parcel/i.test(err))
     return { ok: false, reason: "ambiguous" };
+  // The registry answered and said no to US, not to the code. Checked before
+  // the 5xx test because the Worker wraps this in a 502, and before "missing"
+  // because reporting a real parcel as nonexistent is the one wrong answer
+  // a user will act on.
+  if (/session was refused|anonymous access is closed|CADASTRE_COOKIE/i.test(err))
+    return { ok: false, reason: "refused" };
   // "timeout", "unavailable", "unreachable", "down" — anything that is about
   // the upstream rather than about this code.
   if (/timeout|unavailable|unreachable|stalled|down|5\d\d/i.test(err))
@@ -1080,7 +1087,8 @@ function renderLegend() {
     : `<div class="legrow"><span class="swatch" style="background:#374151"></span>
          <span class="code">${p.code}</span> <span class="miss">${
            t(p.reason === "down" ? "upstreamDown"
-           : p.reason === "ambiguous" ? "ambiguousCode" : "notFound")}</span></div>`
+           : p.reason === "ambiguous" ? "ambiguousCode"
+           : p.reason === "refused" ? "cadastreRefused" : "notFound")}</span></div>`
   ).join("");
   document.querySelectorAll("#legend .swatch[data-i]").forEach(el => el.onclick = () => {
     const p = plotted[+el.dataset.i];
@@ -1176,7 +1184,9 @@ async function plotAll(skipFit = false) {
   // reads like the codes were wrong.
   const failures = plotted.filter(p => !p.ok);
   const allDown = failures.length && failures.every(p => p.reason === "down");
+  const anyRefused = failures.some(p => p.reason === "refused");
   status(corsHit ? t("corsMsg")
+       : anyRefused && !okN ? t("cadastreRefused")
        : allDown && !okN ? t("upstreamDown")
        : t("plotted", okN, codes.length));
   commit();
@@ -2386,7 +2396,11 @@ async function focusAuction(a) {
         if (!vertex) {
           const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code))
             .then(r => r.json());
-          if (!res.success || !res.coords || !res.coords.length) throw new Error("no geometry");
+          if (!res.success || !res.coords || !res.coords.length) {
+            if (/session was refused|anonymous access is closed|CADASTRE_COOKIE/i.test(String(res.error || "")))
+              { aStatus(t("cadastreRefused")); return; }
+            throw new Error("no geometry");
+          }
           vertex = res.coords[0];
           if (res.coords.length >= 3) {          // the cadastre served a real ring
             const popup = auctionPopup(a, res);
