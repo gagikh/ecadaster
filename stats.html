@@ -540,7 +540,11 @@ async function boot() {
     // this had not clipped yet and was weeks from doing so silently. That is
     // how the LIMIT 500 incident began, and the number is only half the fix;
     // X-Truncated on the next line is the half that lasts.
-    const r = await fetch(API + "/auctions?limit=3000&source=all");
+    // open=0: EVERY lot, finished included. Without it the Worker returns open
+    // lots only, so unticking "only open auctions" could never show a finished
+    // one -- the box filtered a list that had been pre-filtered for it.
+    // (2026-10-01: 739 rows came back where the table held 1470.)
+    const r = await fetch(API + "/auctions?open=0&limit=3000&source=all");
     CLIPPED = r.headers.get("X-Truncated") === "1";
     LOTS = await r.json();
   } catch { LOTS = []; }
