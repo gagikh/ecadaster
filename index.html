@@ -2436,22 +2436,36 @@ async function focusAuction(a) {
         // crawler from this very code — and so is `area`. Asking /parcel for
         // them again was a cadastre round-trip for data we were holding, and
         // it is why a click answered "no geometry" whenever the upstream was
-        // slow or down. Go to the cadastre only for a lot that was never
-        // geocoded.
+        // slow or down.
+        //
+        // But a stored POINT is not a stored OUTLINE. Since 2026-10-01 /parcel
+        // can return a real ring (via map.astat.am, cached a week at the edge),
+        // and the codes tab drew 07-002-0036-0741 as a polygon while this tab,
+        // holding only its pin, drew a dot. So a lot with no stored ring still
+        // asks /parcel -- and with a pin in hand a failed ask is not an error:
+        // it falls through to the pin exactly as before.
         let vertex = (db.lat != null && db.lng != null) ? [db.lat, db.lng]
                    : (a.lat  != null && a.lng  != null) ? [a.lat, a.lng] : null;
         let area = db.area ?? a.area, exact;
-        if (!vertex) {
-          const res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code))
-            .then(r => r.json());
-          if (!res.success || !res.coords || !res.coords.length) {
-            if (/session was refused|anonymous access is closed|CADASTRE_COOKIE|cadastre refused|map\.astat\.am/i.test(String(res.error || "")))
+        {
+          let res = null;
+          try {
+            // With a pin in hand the outline is a bonus, so it gets 4s, not the
+            // Worker's 8s cadastre timeout. An abandoned ask still completes at
+            // the edge and is cached there, so the next click has it at once.
+            res = await fetch(API + "/parcel?code=" + encodeURIComponent(a.code),
+                              vertex ? { signal: AbortSignal.timeout(4000) } : {})
+              .then(r => r.json());
+          } catch { res = null; }
+          const got = !!(res && res.success && res.coords && res.coords.length);
+          if (!got && !vertex) {
+            if (res && /session was refused|anonymous access is closed|CADASTRE_COOKIE|cadastre refused|map\.astat\.am/i.test(String(res.error || "")))
               { aStatus(t("cadastreRefused")); return; }
             throw new Error("no geometry");
           }
-          vertex = res.coords[0];
-          if (res.coords.length >= 3) {          // the cadastre served a real ring
-            const popup = auctionPopup(a, res);
+          if (got && !vertex) vertex = res.coords[0];
+          if (got && res.coords.length >= 3) {   // a real ring: cadastre's or astat's
+            const popup = auctionPopup(a, { ...res, area: res.area ?? area });
             const holes = Array.isArray(res.holes) ? res.holes : null;
             layer = parcelPolygon(res.coords, holes, { color: AUCTION_COLOR, weight: 3,
                                             fillColor: AUCTION_COLOR, fillOpacity: opacityVal() });
@@ -2467,7 +2481,7 @@ async function focusAuction(a) {
             aStatus("");
             return await finish(layer);
           }
-          area = res.area ?? area; exact = res.exact;
+          if (got) { area = res.area ?? area; exact = res.exact; }
         }
 
         let coords = [vertex], traced = false, inferred = false, whyNoRing = null;
